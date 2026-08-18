@@ -77,25 +77,35 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     );
     return {
       savedMessage: saved
-        ? "Storefront password saved. Runs will use it automatically."
+        ? "Storefront password saved. Every check will use it automatically."
         : "Storefront password cleared.",
     };
   }
 
   const productUrl = String(form.get("productUrl") ?? "").trim();
   const quantity = Math.max(1, Number(form.get("quantity") ?? 1) || 1);
+  const country = String(form.get("country") ?? "").trim().toUpperCase();
+  const zip = String(form.get("zip") ?? "").trim();
 
   if (!productUrl) {
     return { error: "Pick a product or paste a product URL first." };
   }
   if (!/^https?:\/\//i.test(productUrl)) {
-    return { error: "Product URL must start with https://" };
+    return { error: "The product URL must start with https://" };
+  }
+  if (country && !/^[A-Z]{2}$/.test(country)) {
+    return { error: "Country must be a two-letter code, for example US or PK." };
   }
 
   const run = startRun({
     shop: session.shop,
     productUrl,
     quantity,
+    // The checker calls the Admin API directly, so it needs the offline token
+    // this session already holds. It is never persisted with the run.
+    adminToken: session.accessToken!,
+    country: country || undefined,
+    zip: zip || undefined,
     // A password typed into the run form wins; otherwise use the saved one.
     storefrontPassword: await resolveStorefrontPassword(
       session.shop,
@@ -105,6 +115,32 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   return { runId: run.id };
 };
+
+const LAYERS: Array<{ key: RunStep["layer"]; title: string; blurb: string }> = [
+  {
+    key: "admin",
+    title: "Store & product",
+    blurb: "Admin API — what the store is actually configured to sell.",
+  },
+  {
+    key: "storefront",
+    title: "Buyer path",
+    blurb: "Storefront Cart API — the same cart a real buyer builds.",
+  },
+  {
+    key: "theme",
+    title: "Theme",
+    blurb: "Plain HTTP to the live storefront and the theme's own cart endpoint.",
+  },
+  {
+    key: "checkout",
+    title: "Checkout readiness",
+    blurb:
+      "Shipping, payment and the issued checkout. On a development store the " +
+      "payment check warns instead of asserting — Shopify exposes no API for " +
+      "the test gateway.",
+  },
+];
 
 export default function Index() {
   const { products, storefrontHost, runs, passwordSaved } =
@@ -145,7 +181,7 @@ export default function Index() {
   const settled =
     activeRun?.status === "passed" || activeRun?.status === "failed";
 
-  // Load the run once it becomes active, then poll while the browser drives it.
+  // Load the run once it becomes active, then poll while it is in flight.
   useEffect(() => {
     if (!activeRunId) return;
     poller.load(`/api/runs/${activeRunId}`);
@@ -156,7 +192,7 @@ export default function Index() {
     if (!activeRunId || !inFlight) return;
     const timer = setInterval(
       () => poller.load(`/api/runs/${activeRunId}`),
-      1200,
+      1000,
     );
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -191,20 +227,21 @@ export default function Index() {
     starter.data && "error" in starter.data ? starter.data.error : null;
 
   return (
-    <s-page heading="ATC flow verification">
+    <s-page heading="Add-to-cart flow check">
       <s-button
         slot="primary-action"
         onClick={submit}
         {...(busy ? { loading: true } : {})}
       >
-        Run ATC flow
+        Run check
       </s-button>
 
-      <s-section heading="What to test">
+      <s-section heading="What to check">
         <s-paragraph>
-          This opens a real headless browser on <s-text>{storefrontHost}</s-text>,
-          clicks Add to cart on the live product page, and follows the flow to
-          checkout. It stops at the checkout page —{" "}
+          This runs 13 checks against <s-text>{storefrontHost}</s-text> through
+          Shopify&apos;s Admin and Storefront APIs: it resolves the product, builds a
+          real cart, prices it, asks for a shipping rate and confirms a checkout
+          is issued. It stops there:{" "}
           <s-text type="strong">
             no order is placed and no payment is taken
           </s-text>
@@ -236,7 +273,7 @@ export default function Index() {
               label="Product URL"
               name="productUrl"
               defaultValue={products[0]?.url ?? ""}
-              details="Any live storefront URL that has an add-to-cart form."
+              details="Any live product URL on this store."
             />
 
             <s-stack direction="inline" gap="base">
@@ -246,12 +283,22 @@ export default function Index() {
                 defaultValue="1"
                 min={1}
               />
+              <s-text-field
+                label="Ship-to country"
+                name="country"
+                details="Two-letter code. Blank uses the store's own address."
+              />
+              <s-text-field
+                label="Ship-to postal code"
+                name="zip"
+                details="Shopify needs one to resolve a rate for many countries."
+              />
               <s-password-field
                 label="Storefront password"
                 name="storefrontPassword"
                 details={
                   passwordSaved
-                    ? "A saved password will be used — fill this in only to override it for this run."
+                    ? "A saved password will be used — fill this in only to override it for this check."
                     : "Only if the store is password protected. Save it below to reuse it."
                 }
               />
@@ -269,12 +316,14 @@ export default function Index() {
                 onClick={submit}
                 {...(busy ? { loading: true } : {})}
               >
-                Run ATC flow
+                Run check
               </s-button>
             </s-stack>
           </s-stack>
         </form>
       </s-section>
+
+      {activeRun && <RunDetail run={activeRun} />}
 
       <s-section heading="Storefront password">
         <s-stack direction="block" gap="base">
@@ -286,9 +335,9 @@ export default function Index() {
           </s-stack>
 
           <s-paragraph>
-            If the storefront is password protected (Online Store → Preferences →
-            Password protection), save the password once here and every run will
-            unlock the storefront automatically.
+            The API checks work either way. Save the password (Online Store →
+            Preferences → Password protection) to also cover the two theme
+            checks, which load the real product page.
           </s-paragraph>
 
           <form ref={settingsRef} onSubmit={(e) => e.preventDefault()}>
@@ -317,11 +366,9 @@ export default function Index() {
         </s-stack>
       </s-section>
 
-      {activeRun && <RunDetail run={activeRun} />}
-
-      <s-section slot="aside" heading="Recent runs">
+      <s-section slot="aside" heading="Recent checks">
         {runs.length === 0 ? (
-          <s-paragraph>No runs yet.</s-paragraph>
+          <s-paragraph>No checks yet.</s-paragraph>
         ) : (
           <s-stack direction="block" gap="small-200">
             {runs.map((r) => (
@@ -336,56 +383,82 @@ export default function Index() {
         )}
       </s-section>
 
-      <s-section slot="aside" heading="What each run checks">
-        <s-ordered-list>
-          <s-list-item>Product page loads (HTTP 200)</s-list-item>
-          <s-list-item>Add-to-cart form and variant exist</s-list-item>
-          <s-list-item>Cart emptied for a clean start</s-list-item>
-          <s-list-item>Add to cart button actually clicks</s-list-item>
-          <s-list-item>/cart.js has the right variant, qty, price</s-list-item>
-          <s-list-item>Cart page renders the line item</s-list-item>
-          <s-list-item>Checkout button reaches /checkouts/…</s-list-item>
-          <s-list-item>Checkout shows contact form + matching total</s-list-item>
-        </s-ordered-list>
+      <s-section slot="aside" heading="How it works">
+        <s-stack direction="block" gap="small-200">
+          {LAYERS.map((l) => (
+            <s-stack key={l.key} direction="block" gap="small-500">
+              <s-text type="strong">{l.title}</s-text>
+              <s-text color="subdued">{l.blurb}</s-text>
+            </s-stack>
+          ))}
+        </s-stack>
       </s-section>
     </s-page>
   );
 }
 
 function RunDetail({ run }: { run: FlowRun }) {
+  const warnings = run.steps.filter((s) => s.status === "warn").length;
+
   const heading =
-    run.status === "passed"
-      ? "Flow verified through checkout ✅"
-      : run.status === "failed"
-        ? "Flow is broken ❌"
-        : "Running…";
+    run.status === "failed"
+      ? "The flow is broken"
+      : run.status === "passed"
+        ? warnings
+          ? "Flow works, with warnings"
+          : "Flow verified through checkout"
+        : "Checking…";
 
   const duration =
     run.finishedAt != null
       ? `${((run.finishedAt - run.startedAt) / 1000).toFixed(1)}s`
       : null;
 
+  const done = run.steps.filter((s) =>
+    ["pass", "warn", "fail", "skip"].includes(s.status),
+  ).length;
+
   return (
     <s-section heading={heading}>
       <s-stack direction="inline" gap="base" alignItems="center">
         <StatusBadge status={run.status} />
+        <s-text color="subdued">
+          {done}/{run.steps.length} checks
+        </s-text>
         {duration && <s-text color="subdued">{duration}</s-text>}
         {run.cartTotal && (
-          <s-text color="subdued">Cart total {run.cartTotal}</s-text>
+          <s-text color="subdued">Order total {run.cartTotal}</s-text>
         )}
       </s-stack>
 
       {run.error && (
-        <s-banner tone="critical" heading="Failure reason">
+        <s-banner tone="critical" heading="What is wrong">
           <s-paragraph>{run.error}</s-paragraph>
         </s-banner>
       )}
 
-      <s-stack direction="block" gap="small-200">
-        {run.steps.map((step, i) => (
-          <StepRow key={step.key} step={step} index={i + 1} runId={run.id} />
-        ))}
-      </s-stack>
+      {run.status === "passed" && warnings > 0 && (
+        <s-banner tone="warning" heading="Worth a look">
+          <s-paragraph>
+            The flow reaches checkout, but {warnings} check
+            {warnings > 1 ? "s" : ""} found something a buyer would notice — see
+            the amber rows below.
+          </s-paragraph>
+        </s-banner>
+      )}
+
+      {LAYERS.map((layer) => {
+        const steps = run.steps.filter((s) => s.layer === layer.key);
+        if (!steps.length) return null;
+        return (
+          <s-stack key={layer.key} direction="block" gap="small-500">
+            <s-text type="strong">{layer.title}</s-text>
+            {steps.map((step) => (
+              <StepRow key={step.key} step={step} />
+            ))}
+          </s-stack>
+        );
+      })}
 
       {run.checkoutUrl && (
         <s-paragraph>
@@ -401,56 +474,25 @@ function RunDetail({ run }: { run: FlowRun }) {
 
 const STEP_ICON: Record<RunStep["status"], string> = {
   pass: "✅",
+  warn: "⚠️",
   fail: "❌",
   running: "⏳",
   skip: "⏭️",
   pending: "•",
 };
 
-function StepRow({
-  step,
-  index,
-  runId,
-}: {
-  step: RunStep;
-  index: number;
-  runId: string;
-}) {
-  const [open, setOpen] = useState(false);
-
+function StepRow({ step }: { step: RunStep }) {
   return (
     <s-box padding="small-200" borderWidth="base" borderRadius="base">
       <s-stack direction="block" gap="small-500">
         <s-stack direction="inline" gap="small-200" alignItems="center">
           <s-text>{STEP_ICON[step.status]}</s-text>
-          <s-text type="strong">
-            {index}. {step.title}
-          </s-text>
+          <s-text type="strong">{step.title}</s-text>
           {step.durationMs != null && (
             <s-text color="subdued">{step.durationMs}ms</s-text>
           )}
-          {step.screenshot && (
-            <s-clickable onClick={() => setOpen((v) => !v)}>
-              <s-text color="subdued">
-                {open ? "hide screenshot" : "screenshot"}
-              </s-text>
-            </s-clickable>
-          )}
         </s-stack>
-
         {step.detail && <s-text color="subdued">{step.detail}</s-text>}
-
-        {open && step.screenshot && (
-          <img
-            src={`/api/shot/${runId}/${step.key}`}
-            alt={`${step.title} screenshot`}
-            style={{
-              maxWidth: "100%",
-              border: "1px solid #ddd",
-              borderRadius: 6,
-            }}
-          />
-        )}
       </s-stack>
     </s-box>
   );

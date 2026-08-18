@@ -1,14 +1,20 @@
 import { randomUUID } from "node:crypto";
 import prisma from "../db.server";
-import { blankRun, runAtcFlow } from "./runner.server";
+import { blankRun, runCheck } from "./checker.server";
+import { getStorefrontToken, refreshStorefrontToken } from "./token.server";
 import type { FlowRun, RunOptions } from "./types";
 
 /**
- * Live runs are held in memory so the UI can poll step-by-step progress while
- * the browser is still driving. Each update is mirrored to SQLite so history
- * survives a server restart.
+ * Live runs are held in memory so the UI can poll step-by-step progress. Each
+ * update is mirrored to SQLite so history survives a server restart.
  */
 const live = new Map<string, FlowRun>();
+
+/**
+ * A run left in `running` by a server restart would otherwise be polled by the
+ * UI forever. Anything older than this with no result is reported as failed.
+ */
+const STALE_AFTER_MS = 5 * 60_000;
 
 export function startRun(opts: RunOptions): FlowRun {
   const id = randomUUID();
@@ -17,7 +23,7 @@ export function startRun(opts: RunOptions): FlowRun {
   void persist(run);
 
   // Fire and forget — the UI polls getRun() for progress.
-  void runAtcFlow(run, opts, (updated) => {
+  void runCheck(run, opts, () => resolveToken(opts), (updated) => {
     live.set(updated.id, { ...updated, steps: updated.steps.map((s) => ({ ...s })) });
     void persist(updated);
   })
@@ -26,15 +32,33 @@ export function startRun(opts: RunOptions): FlowRun {
       if (current) {
         current.status = "failed";
         current.error = err instanceof Error ? err.message : String(err);
+        current.finishedAt = Date.now();
         void persist(current);
       }
     })
     .finally(() => {
       // Keep the finished run in memory briefly, then fall back to the DB copy.
-      setTimeout(() => live.delete(id), 5 * 60_000).unref?.();
+      setTimeout(() => live.delete(id), STALE_AFTER_MS).unref?.();
     });
 
   return run;
+}
+
+/**
+ * Hands the checker a Storefront API token, re-minting once if the cached one
+ * has been revoked — otherwise a stale cached token would fail every future run
+ * with no way to recover from the UI.
+ */
+async function resolveToken(opts: RunOptions): Promise<string> {
+  const token = await getStorefrontToken(opts.shop, opts.adminToken);
+  const ok = await fetch(`https://${opts.shop}/api/2025-10/graphql.json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Shopify-Storefront-Access-Token": token },
+    body: JSON.stringify({ query: "{ shop { name } }" }),
+  })
+    .then((r) => r.ok)
+    .catch(() => false);
+  return ok ? token : refreshStorefrontToken(opts.shop, opts.adminToken);
 }
 
 export async function getRun(id: string): Promise<FlowRun | null> {
@@ -42,7 +66,7 @@ export async function getRun(id: string): Promise<FlowRun | null> {
   if (inMemory) return inMemory;
 
   const row = await prisma.flowRun.findUnique({ where: { id } });
-  return row ? rowToRun(row) : null;
+  return row ? markStale(rowToRun(row)) : null;
 }
 
 export async function listRuns(shop: string, take = 20): Promise<FlowRun[]> {
@@ -51,7 +75,18 @@ export async function listRuns(shop: string, take = 20): Promise<FlowRun[]> {
     orderBy: { startedAt: "desc" },
     take,
   });
-  return rows.map(rowToRun);
+  return rows.map((row) => markStale(rowToRun(row)));
+}
+
+/** An unfinished run that is no longer in memory can never finish. */
+function markStale(run: FlowRun): FlowRun {
+  const unfinished = run.status === "queued" || run.status === "running";
+  if (!unfinished || Date.now() - run.startedAt < STALE_AFTER_MS) return run;
+  return {
+    ...run,
+    status: "failed",
+    error: run.error ?? "The run was interrupted before it finished — start a new one.",
+  };
 }
 
 async function persist(run: FlowRun) {

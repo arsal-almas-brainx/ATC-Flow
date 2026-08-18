@@ -8,9 +8,12 @@ generator client {
 // Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
 // enough when changing adapters.
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+// DATABASE_URL is set locally by prisma/.env (file:dev.sqlite) and in
+// production by the host, pointing at a persistent volume. Real environment
+// variables take precedence over the .env file.
 datasource db {
   provider = "sqlite"
-  url      = "file:dev.sqlite"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
@@ -37,10 +40,16 @@ model Session {
 model ShopSetting {
   shop String @id
 
-  /// Storefront (password-protection) password, used to unlock the storefront
-  /// before the flow runs. Stored as-is so the runner can replay it — this is
-  /// the shared storefront preview password, not an admin credential.
+  /// Storefront (password-protection) password. Used only by the two theme
+  /// checks, which load the real product page over HTTP. Stored as-is because it
+  /// has to be replayed to the password form — this is the shared storefront
+  /// preview password, not an admin credential.
   storefrontPassword String?
+
+  /// Storefront API access token, minted on demand via the Admin API and cached
+  /// here because tokens are a limited per-shop resource. The checker builds its
+  /// carts through the Storefront GraphQL API with it.
+  storefrontApiToken String?
 
   updatedAt DateTime @updatedAt
 }

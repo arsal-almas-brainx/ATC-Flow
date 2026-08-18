@@ -3,14 +3,14 @@
   "private": true,
   "scripts": {
     "build": "react-router build",
-    "dev": "shopify app dev",
+    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first shopify app dev --config dev --use-localhost",
+    "dev:tunnel": "NODE_OPTIONS=--dns-result-order=ipv4first shopify app dev",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
     "config:use": "shopify app config use",
     "env": "shopify app env",
     "start": "react-router-serve ./build/server/index.js",
-    "docker-start": "npm run setup && npm run start",
     "setup": "prisma generate && prisma migrate deploy",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",
@@ -18,7 +18,10 @@
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "atc:check": "node --experimental-strip-types scripts/atc-check.mjs"
+    "atc:check": "node --experimental-strip-types scripts/atc-check.mjs",
+    "service:install": "node scripts/setup-service.mjs",
+    "service:uninstall": "node scripts/setup-service.mjs --uninstall",
+    "service:logs": "tail -n 40 -f .logs/com.atcflow.server.err.log"
   },
   "type": "module",
   "engines": {
@@ -34,7 +37,6 @@
     "@shopify/shopify-app-react-router": "^1.1.0",
     "@shopify/shopify-app-session-storage-prisma": "^9.0.0",
     "isbot": "^5.1.31",
-    "playwright": "^1.62.1",
     "prisma": "^6.16.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

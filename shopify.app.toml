@@ -20,9 +20,38 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
+  # Mandatory compliance webhooks. Shopify requires all three to exist and
+  # answer 200 for an App Store listing, even for an app that stores no customer
+  # data — which this one does not. shop/redact is the backstop that erases a
+  # shop's stored credentials if the uninstall webhook was never delivered.
+  [[webhooks.subscriptions]]
+  topics = [ "customers/data_request" ]
+  uri = "/webhooks/customers/data_request"
+
+  [[webhooks.subscriptions]]
+  topics = [ "customers/redact" ]
+  uri = "/webhooks/customers/redact"
+
+  [[webhooks.subscriptions]]
+  topics = [ "shop/redact" ]
+  uri = "/webhooks/shop/redact"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = ""
+#
+# read_products      — the product picker, and the Admin API checks that read
+#                      product status, price and inventory.
+# unauthenticated_*  — the Storefront API token the checker mints reads products
+#                      and writes carts through it. These are the scopes that
+#                      token's own permissions are derived from.
+#
+# Deliberately NOT requested:
+#   read_publications                       — whether a product is published to
+#     the Online Store is already proven by whether the Storefront API returns
+#     it, so the extra scope buys nothing.
+#   unauthenticated_read_product_inventory  — the Admin API reports inventory
+#     authoritatively; the storefront's view of it is redundant.
+scopes = "read_products,unauthenticated_read_product_listings,unauthenticated_write_checkouts"
 
 [auth]
 redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]

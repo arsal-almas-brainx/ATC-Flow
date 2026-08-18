@@ -35,25 +35,3 @@ export async function resolveStorefrontPassword(
   if (supplied?.trim()) return supplied.trim();
   return (await getStorefrontPassword(shop)) ?? undefined;
 }
-
-/**
- * Used by the CLI check, which knows only the storefront host. Matches on the
- * host first; if nothing matches and exactly one shop is configured, use that.
- */
-export async function resolvePasswordForHost(host: string): Promise<{
-  password?: string;
-  source?: string;
-}> {
-  const exact = await prisma.shopSetting.findUnique({ where: { shop: host } });
-  if (exact?.storefrontPassword) {
-    return { password: exact.storefrontPassword, source: host };
-  }
-
-  const all = await prisma.shopSetting.findMany({
-    where: { storefrontPassword: { not: null } },
-  });
-  if (all.length === 1 && all[0].storefrontPassword) {
-    return { password: all[0].storefrontPassword, source: all[0].shop };
-  }
-  return {};
-}

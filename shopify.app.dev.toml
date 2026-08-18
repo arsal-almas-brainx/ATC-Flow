@@ -1,0 +1,35 @@
+# Local-development config, used by `npm run dev`. Same app (same client_id) as
+# shopify.app.toml — only the URLs and webhooks differ.
+#
+# Why this file exists: `--use-localhost` serves the app from https://localhost,
+# and Shopify's API rejects a localhost webhook URI outright:
+#
+#   Invalid value: "https://localhost:3458/webhooks/app/uninstalled" for: "uri"
+#
+# That one validation error fails the whole dev preview. Webhooks can never be
+# delivered to localhost anyway, so this config simply declares none. The real
+# subscriptions stay in shopify.app.toml, which is what `npm run deploy` pushes.
+#
+# `npm run dev` rewrites application_url and redirect_urls in *this* file, which
+# is the other benefit: your production config no longer gets clobbered by dev.
+
+client_id = "de8fdbefc8058f2b8e91a7750c7ded10"
+name = "ATC Flow App"
+application_url = "https://localhost:3458"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+include_config_on_deploy = true
+
+# api_version is required even with no subscriptions. Keep it in sync with
+# shopify.app.toml.
+[webhooks]
+api_version = "2026-10"
+
+[access_scopes]
+# Keep in sync with shopify.app.toml, which documents why each one is here.
+scopes = "read_products,unauthenticated_read_product_listings,unauthenticated_write_checkouts"
+
+[auth]
+redirect_urls = [ "https://localhost:3458/auth/callback" ]
