@@ -1,0 +1,20 @@
+node_modules
+build
+.cache
+.react-router
+.git
+.github
+.logs
+.shopify
+.shopify.lock
+
+# Local database — production uses the Fly volume at /data.
+prisma/dev.sqlite
+prisma/dev.sqlite-journal
+prisma/.env
+
+# Never bake secrets into the image.
+.env
+.env.*
+
+extensions/*/dist

@@ -218,7 +218,7 @@ Neither `warn` nor `skip` fails the run — only a genuine `fail` does.
 > ⚠️ **Keep `npm run dev` running.** The app's code runs on *your machine* — Shopify Admin just
 > displays it in an iframe. Close the terminal and the app page goes blank. This is how every
 > Shopify app works; there is no way to run it "inside" Shopify. To use the app with no terminal
-> open, host it — see **Part C**.
+> open, deploy it — see **Part C**.
 
 ---
 
@@ -240,14 +240,108 @@ Neither `warn` nor `skip` fails the run — only a genuine `fail` does.
 
 ---
 
-## Part C — Making it permanent (no terminal required)
+## Part C — Deploy it (no terminal required)
 
 An embedded Shopify app's UI is served by **your** server — Shopify Admin only frames it. So
-"installed" is not enough on its own: to open the store with no terminal running, something has to
-be serving the app.
+"installed" is not enough on its own: for the app to open with no terminal running, something has
+to be serving it around the clock. That is what deploying means here.
 
-The app runs as two macOS launch agents that start on boot and keep running with no terminal open.
-$0, no credit card. The only limitation is that the Mac must be powered on and online.
+This app deploys to **[Fly.io](https://fly.io)**. The config is already in the repo
+([fly.toml](fly.toml), [Dockerfile](Dockerfile)) and the machine sleeps when idle and wakes on the
+first request, so an app only you use costs cents a month. You need the `flyctl` CLI
+(`brew install flyctl`) and a Fly account with a card on file. No Docker install required — Fly
+builds the image on its own remote builder.
+
+### 1. Log in and create the app
+
+```bash
+fly auth login
+fly apps create atc-flow-app
+```
+
+If that name is taken, pick another — then change **both** `app` and `SHOPIFY_APP_URL` in
+[fly.toml](fly.toml), and `application_url` + `redirect_urls` in
+[shopify.app.toml](shopify.app.toml), to match the new `https://<name>.fly.dev`.
+
+### 2. Create the database volume
+
+SQLite has to live on a persistent disk. Without it, every redeploy wipes the session table and
+the store has to reinstall the app.
+
+```bash
+fly volumes create data --size 1 --region bom --app atc-flow-app --yes
+```
+
+`bom` is Mumbai. Use whatever region is closest to you — `fly platform regions` lists them — and
+keep it the same as `primary_region` in [fly.toml](fly.toml).
+
+### 3. Set the API secret
+
+Everything else lives in `fly.toml`; only the client secret is a secret.
+
+```bash
+npm run env -- show          # prints SHOPIFY_API_SECRET
+fly secrets set SHOPIFY_API_SECRET=<paste-it-here> --app atc-flow-app
+```
+
+### 4. Deploy
+
+```bash
+fly deploy
+```
+
+Confirm it is serving:
+
+```bash
+curl -o /dev/null -w '%{http_code}\n' https://atc-flow-app.fly.dev/      # want 200 or 302
+```
+
+### 5. Push the URL to Shopify
+
+[shopify.app.toml](shopify.app.toml) already points at `https://atc-flow-app.fly.dev`. Send it:
+
+```bash
+npm run deploy
+```
+
+### 6. Install on the store — once
+
+Dev dashboard → your app → **Distribution** → **Custom distribution** → enter the store's
+`.myshopify.com` domain → open the install link → **Install app**.
+
+Now close every terminal. The app is at **Apps → ATC Flow App** in Shopify Admin, whenever you
+want it.
+
+### Shipping a code change
+
+```bash
+fly deploy                   # code
+npm run deploy               # only if you changed shopify.app.toml (scopes, webhooks, URLs)
+```
+
+### Managing it
+
+```bash
+fly logs --app atc-flow-app
+fly status --app atc-flow-app
+fly ssh console --app atc-flow-app          # shell in; the database is at /data/prod.sqlite
+fly apps destroy atc-flow-app               # tear it all down
+```
+
+> `npm run dev` is unaffected by any of this — it uses [shopify.app.dev.toml](shopify.app.dev.toml)
+> and localhost. But note that `automatically_update_urls_on_dev` is now **false** in
+> [shopify.app.toml](shopify.app.toml), so `npm run dev:tunnel` will no longer silently repoint the
+> deployed app at a temporary tunnel. If you do need a tunnel session, flip it to `true`, and run
+> `npm run deploy` afterwards to restore the Fly URL.
+
+---
+
+## Part D — Alternative: run it on this Mac, free
+
+If you would rather not pay for hosting, the app can instead run as two macOS launch agents that
+start on boot and keep running with no terminal open. $0, no credit card. The limitation is that
+the Mac must be powered on and online for the app to work at all — a closed lid means a blank app
+page in Admin.
 
 ### 1. Claim your free ngrok static domain
 
@@ -277,6 +371,10 @@ agents:
 | `com.atcflow.ngrok` | exposes port 3000 at your static domain |
 
 Both use `KeepAlive`, so macOS restarts them if they crash or the Mac reboots.
+
+> This rewrites `application_url` and `redirect_urls` in [shopify.app.toml](shopify.app.toml) to
+> your ngrok domain, so it is one or the other — not both. To go back to Fly, restore those two
+> values to `https://atc-flow-app.fly.dev`, run `npm run service:uninstall`, then `npm run deploy`.
 
 ### 3. Push the URL to Shopify and install on the store
 

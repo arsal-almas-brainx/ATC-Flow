@@ -2,11 +2,11 @@
 
 client_id = "de8fdbefc8058f2b8e91a7750c7ded10"
 name = "ATC Flow App"
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://atc-flow-app.fly.dev"
 embedded = true
 
 [build]
-automatically_update_urls_on_dev = true
+automatically_update_urls_on_dev = false
 include_config_on_deploy = true
 
 [webhooks]
@@ -54,4 +54,4 @@ api_version = "2026-10"
 scopes = "read_products,unauthenticated_read_product_listings,unauthenticated_write_checkouts"
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [ "https://atc-flow-app.fly.dev/auth/callback" ]

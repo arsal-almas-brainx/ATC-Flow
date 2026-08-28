@@ -1,0 +1,42 @@
+# Fly.io deployment config. See README Part C.
+#
+# Rename `app` if "atc-flow-app" is already taken globally — and change
+# SHOPIFY_APP_URL to match, since the hostname is derived from the app name.
+app = "atc-flow-app"
+primary_region = "bom"
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  HOST = "0.0.0.0"
+
+  # SQLite lives on the mounted volume below so it survives restarts and
+  # redeploys. Losing it would log every shop out and force a reinstall.
+  DATABASE_URL = "file:/data/prod.sqlite"
+
+  # Not secrets: the client_id is public and the scopes are already in
+  # shopify.app.toml. SHOPIFY_API_SECRET is set with `fly secrets set`.
+  SHOPIFY_APP_URL = "https://atc-flow-app.fly.dev"
+  SHOPIFY_API_KEY = "de8fdbefc8058f2b8e91a7750c7ded10"
+  SCOPES = "read_products,unauthenticated_read_product_listings,unauthenticated_write_checkouts"
+
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+
+  # The machine sleeps when idle and wakes on the first request, so an app only
+  # you use costs cents a month. Cold start is a few seconds on the first load.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
