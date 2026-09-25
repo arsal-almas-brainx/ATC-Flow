@@ -1,57 +1,55 @@
 # ATC Flow App
 
-A Shopify embedded admin app that verifies your store's **add-to-cart → checkout** flow using
-Shopify's own APIs. Press **Run check** and it runs 13 checks across four layers, in about 8
-seconds, and tells you exactly which one broke.
+A Shopify embedded admin app that tests your store's **add-to-cart → checkout** flow the way a QA
+person would: with a real, headless Chromium browser doing exactly what a real visitor does. Press
+**Run check** and it loads your homepage and product page, searches for the product, clicks the
+real Add-to-cart button, looks at the cart, changes its quantity, applies a discount code, clicks
+through to checkout, and confirms the product is listed on a collection — nine checks, one
+continuous browser session, one shopper's one visit.
 
-| Layer | # | What it proves |
-|---|---|---|
-| **Store & product** — Admin API | 1 | The store is reachable, SSL is on, currency is set |
-| | 2 | The app can get a Storefront API token |
-| | 3 | The product is active, priced above 0, and has stock |
-| **Buyer path** — Storefront Cart API | 4 | The product is published to the Online Store channel |
-| | 5 | The Cart API accepts the variant |
-| | 6 | The cart holds the right variant, quantity and price |
-| | 7 | Changing the quantity recalculates the cart |
-| **Theme** — plain HTTP to the live storefront | 8 | The product page returns 200 and renders a `form[action*="/cart/add"]` |
-| | 9 | The theme's own endpoint, `/cart/add.js`, actually holds the item |
-| **Checkout readiness** | 10 | A shipping rate exists for the ship-to address |
-| | 11 | A buyer has some way to pay |
-| | 12 | Shopify issues a checkout URL for the cart |
-| | 13 | That checkout URL responds |
+| Layer | What it proves |
+|---|---|
+| **Storefront** | The homepage loads for a real visitor. The product page loads, has a buyable variant, and exposes an add-to-cart form. |
+| **Discovery** | Searching for the product finds it. The product is listed on a collection page it links back to. |
+| **Cart** | The theme's real Add-to-cart button works. The cart page shows the item. The quantity control works. A discount code actually applies. |
+| **Checkout** | Checkout is reached. |
 
 Every check is timed and reports the exact reason on failure.
 
-> **No order is placed and no payment is taken.** The run stops once a checkout is issued.
-> Carts it creates are abandoned and Shopify expires them on its own, so it is safe to run against
-> a live production store as often as you like.
+> **No order is placed and no payment is taken.** The run stops once checkout is reached. Nothing
+> is ever completed, so it is safe to run against a live production store as often as you like.
 
 ---
 
-## Why there is no browser
+## Why a real browser, not APIs
 
-An earlier version drove the storefront with Playwright. That does not work, and it is worth
-knowing why before you reach for it again.
+An earlier version of this app asked Shopify's Admin and Storefront APIs direct questions instead
+of using a browser at all — "is this product active," "does the Cart API accept this variant," and
+so on. That is a reasonable way to check whether *Shopify itself* is working, but it misses the
+actual point of this tool: if Shopify's backend is broken, **Shopify's own status page already says
+so**. What only this app can catch is a problem specific to *your* storefront that a real visitor
+would actually hit — a theme bug that stops the Add-to-cart button from firing even though the API
+behind it is perfectly healthy, a page that silently fails to render, a discount field that stopped
+working. None of that is visible by asking an API a question; it is only visible by actually using
+the site.
 
-Shopify fronts every storefront with Cloudflare. Cloudflare fingerprints an automated browser and
-answers it with a *"Verifying your connection…"* interstitial served under **HTTP 429** — so the
-product page never loads and `/cart.js` comes back as HTML. No amount of UA spoofing or request
-rerouting fixes it reliably, and retrying escalates the challenge.
+So every check here is a real browser action, and none of them call Shopify's Admin or Storefront
+APIs at all.
 
-Plain HTTP requests are **not** fingerprinted that way, and Shopify's APIs are not behind the
-challenge at all. So every layer the browser was there to reach is reachable without one:
+**Getting a real browser past Shopify's bot protection** is what makes this possible. Shopify
+fronts every storefront with Cloudflare, which fingerprints an ordinary automated browser and
+answers it with a *"Verifying your connection…"* interstitial. In May 2026 Shopify shipped **Web
+Bot Auth**: a signature you create once in Shopify Admin (Online Store → Preferences → Crawler
+access) that authorizes a specific tool to get past that challenge. Configure it under **Settings**
+in this app and every check runs for real; without it, the whole run is cleanly skipped with a
+message pointing at Settings, rather than failing.
 
-- The **Admin API** is the authoritative view of what the store is configured to sell — better
-  than scraping a page for it.
-- The **Storefront Cart API** is the same cart engine the theme's Add-to-cart button ends up
-  talking to. Building a cart through it *is* the buyer path.
-- `/cart/add.js` and `/cart.js` — the endpoints the theme's button actually posts to — are ordinary
-  HTTP. Check 9 calls them directly, which covers the theme layer with no browser.
-
-What this genuinely cannot see is theme **JavaScript**: if a JS error stops the button from firing
-at all, checks 8 and 9 still pass because the endpoint behind the button is healthy. That is the
-one trade, and it buys a check that is ~5× faster, cannot be bot-blocked, and has no Chromium
-dependency.
+**Checkout stays shallow on purpose.** Web Bot Auth does not cover Shopify's checkout host, which
+is the platform's most heavily bot-protected surface by design. This app still authorizes that host
+too, on the chance it helps — and in practice checkout is often reached successfully — but nothing
+here asserts on shipping rates or payment methods inside checkout. The one thing checked is that a
+real checkout is reached at all; if Cloudflare blocks it, that is reported as skipped, never as a
+failure, since a blocked checker is not proof the store is broken.
 
 ---
 
@@ -62,21 +60,32 @@ The same engine runs from the command line, so it works as a cron or CI smoke te
 ```bash
 npm run atc:check -- https://your-store.com/products/some-product
 npm run atc:check -- https://your-store.com/products/x --qty 2
-npm run atc:check -- https://your-store.com/products/x --country US --zip 10001
+npm run atc:check -- https://your-store.com/products/x --discount SAVE10
 ```
 
-It exits `0` when the flow is healthy and `1` when it is broken. It reads the Admin API session the
-app stored at install time, so the app has to have been installed and opened in Admin once.
+It exits `0` when the flow is healthy and `1` when it is broken (including when the run is skipped
+for having no Web Bot Auth signature configured). It reads the app's stored session only to work
+out which shop a custom domain belongs to — no Admin or Storefront API call is ever made by a
+check itself.
 
-**Password-protected store?** Pass the storefront password once with `--save` and every later
-run — CLI *and* app UI — reuses it:
+**Save a Web Bot Auth signature once with `--save`** and every later run — CLI *and* app UI —
+reuses it:
+
+```bash
+npm run atc:check -- https://your-store.com/products/x \
+  --wba-signature '...' --wba-signature-input '...' --wba-expires 2026-12-01 --save
+npm run atc:check -- https://your-store.com/products/x     # signature reused automatically
+```
+
+Without one, the whole run is skipped — nothing is tested until it is configured.
+
+**Password-protected store?** Pass the storefront password once with `--save` and every later run
+reuses it, unlocking the real password form before anything else runs:
 
 ```bash
 npm run atc:check -- https://your-store.com/products/x --password 'yourpassword' --save
 npm run atc:check -- https://your-store.com/products/x     # password reused automatically
 ```
-
-Only the two theme checks need it. The eleven API checks work either way.
 
 ---
 
@@ -90,7 +99,7 @@ You need: a **Shopify Partner account** (free) and admin access to the store.
 npm install
 ```
 
-There is no browser to download — the checker is API-only.
+This also downloads a headless Chromium build — every check uses it.
 
 ### 2. Create the database
 
@@ -145,8 +154,8 @@ dev, and on a slow or restricted network they fail in ways that look like bugs i
 
 The one trade-off: **Shopify cannot deliver webhooks to `localhost`.** The `app/uninstalled` and
 `app/scopes_update` handlers won't fire while you develop this way. Everything else — the embedded
-UI, OAuth, Admin API calls, the ATC runs themselves — works normally. If you need to exercise a
-webhook, use `npm run dev:tunnel` for that session, or trigger one directly:
+UI, OAuth, the ATC runs themselves — works normally. If you need to exercise a webhook, use
+`npm run dev:tunnel` for that session, or trigger one directly:
 
 ```bash
 npm run shopify -- app webhook trigger
@@ -187,33 +196,42 @@ Press p to open the app preview
 
 ### 5. Install it on the store
 
-Press **`p`** in that terminal. Your browser opens the install screen → click **Install app**
-(it asks for product read access for the product picker, plus unauthenticated Storefront API
-access so it can mint a Storefront token and build carts).
+Press **`p`** in that terminal. Your browser opens the install screen → click **Install app** (it
+asks for product read access, used only to populate the product picker dropdown — nothing in the
+check engine itself calls the Admin API).
 
 The app now appears in your store's Shopify Admin under **Apps → ATC Flow App**.
 
-### 6. If the storefront is password protected, save the password
+### 6. Configure Web Bot Auth and, if needed, the storefront password
 
-In the app's **Storefront password** section, enter the password and click **Save password**.
-The badge flips to **Saved** and the two theme checks will unlock the storefront automatically. The
-other eleven checks do not need it.
+In the app's **Settings** page:
+
+- Create a signature in Shopify Admin → Online Store → Preferences → Crawler access, then paste
+  its **Signature** and **Signature-Input** values (plus the expiry date shown there) into the Web
+  Bot Auth section and save. Nothing runs until this is configured.
+- If the storefront is password protected, enter the password and click **Save password**. The
+  browser unlocks it automatically on every run.
 
 ### 7. Run a check
 
-Pick a product from the dropdown, click **Run check**. Results stream in live, grouped by layer,
-and settle in about 8 seconds.
+Click **Run check** — it auto-picks a recently active, in-stock product, so no other input is
+required. Results stream in live, grouped by layer.
 
-Three outcomes are possible per check:
+Four outcomes are possible per check:
 
 - **pass** — the check ran and the store is fine.
-- **warn** — the check ran and found something worth your attention, but it is not proof the flow is
-  broken. Checks 10 and 11 can report this, because for both a healthy store and a broken one can
-  look identical over the API.
-- **skip** — the check could not run: the storefront is password protected and no password is saved,
-  Cloudflare rate-limited the checker, or an earlier check already failed.
+- **warn** — the check ran and found something worth your attention, but it is not proof the flow
+  is broken (e.g. a discount code was accepted but didn't change the total — expected for
+  free-shipping-only codes).
+- **skip** — the check could not run at all: no Web Bot Auth signature is configured, Cloudflare
+  blocked the browser anyway, no discount code was supplied, or an earlier, genuinely-prerequisite
+  check already failed.
+- **fail** — a real, observed problem: a button that doesn't work, a page that doesn't load, a
+  discount code that doesn't apply.
 
-Neither `warn` nor `skip` fails the run — only a genuine `fail` does.
+Only `fail` marks the run broken. A check that couldn't run at all because a *different*, unrelated
+check (say, the cart's own quantity stepper) failed still runs on its own — one broken capability
+doesn't hide the rest of the report.
 
 > ⚠️ **Keep `npm run dev` running.** The app's code runs on *your machine* — Shopify Admin just
 > displays it in an iframe. Close the terminal and the app page goes blank. This is how every
@@ -224,18 +242,17 @@ Neither `warn` nor `skip` fails the run — only a genuine `fail` does.
 
 ## Part B — Using it
 
-- **Product dropdown** — auto-populated with your 50 most recently updated active, in-stock
-  products (sold-out products are filtered out since they can never pass).
-- **Product URL** — paste any live storefront URL instead, if you want to test a specific one.
-- **Quantity** — how many units to add, asserted against the cart afterwards.
-- **Ship-to country** — the two-letter country used to request a shipping rate (check 10). Blank
-  uses the store's own country. Set it to a country you actually sell to if you want to prove that
-  lane works.
-- **Storefront password section** — if the store is password protected (Online Store →
-  Preferences → Password protection), save the password once here and every run unlocks the
-  storefront automatically. A **Saved / Not set** badge shows the current state. The password is
-  never sent back to the browser — only whether one is stored. Save with the field blank to clear
-  it. The per-run password field above overrides the saved one for a single run.
+- **Run check** — needs no input in the common case; it tests whatever product the loader
+  auto-picked. Click **Test a different product, or set advanced options** to override the product,
+  quantity, a per-run storefront password, or a discount code to test.
+- **Settings → Web Bot Auth** — the signature that gets the browser past Cloudflare. Shows
+  **Not configured / Active / Expires in N days / Expired**, with a banner only when it actually
+  needs attention. There is no API to create or renew one, so a reminder here is the only warning
+  you'll get before checks silently start skipping again.
+- **Settings → Storefront password** — if the store is password protected (Online Store →
+  Preferences → Password protection), save it once and every run unlocks the storefront
+  automatically through the real password form. The password is never sent back to the browser —
+  only whether one is stored.
 - **Recent checks** (right sidebar) — click any past run to re-open its full result.
 
 ---
@@ -456,153 +473,98 @@ time. Above ~10s, `cloudflared` times out while *creating* the tunnel, before an
 is attempted, so transport flags like `TUNNEL_TRANSPORT_PROTOCOL=http2` cannot help. Use
 `npm run dev`, which needs no tunnel.
 
-**"No product with handle … exists in this store"**
-The product URL does not match a product in the store this app is installed on. Check the handle,
-and check you are pointing at the right store.
-
-**"… is not visible on the online store"**
-The product exists and is active, but it is not published to the **Online Store** sales channel, so
-no buyer can see or buy it. Fix it on the product page under **Publishing → Online Store**. This is
-the single most common genuine failure the checker catches.
-
-**"has no variant available for sale"**
-Every variant is either out of stock with *"Stop selling when out of stock"* set, or unpublished.
-The message reports how many. Restock, allow overselling, or test a different product.
-
-**"No shipping rate is available for XX …"**
-A buyer at that address would reach checkout and be unable to finish. Add a shipping zone covering
-it in **Settings → Shipping and delivery**. If the product does not need shipping (a digital good),
-this check reports as skipped instead.
-
-**"No shipping rate came back for XX, but no postal code was used"** (a `warn`, not a failure)
-Shopify resolves rates from the whole address, not just the country — for the US and many others it
-returns nothing at all without a postal code, so an empty result with no postal code proves nothing.
-Rather than cry "no shipping zone" on incomplete input, the check says so.
-
-Make it conclusive either way:
-
-- fill in the store address under **Settings → Store details** — the check uses it by default, and a
-  real address is the best ship-to since it is somewhere the store demonstrably operates; or
-- set an explicit **Ship-to country** and **Ship-to postal code** in the app (`--country` and
-  `--zip` on the CLI) to prove a specific lane works.
-
-**Check 11, payment methods** — the one check that cannot always be automated
-
-It reports one of three verdicts, and never stands down silently:
-
-- **pass** — Shopify reports card brands or digital wallets, so a buyer can pay.
-- **warn, development store** — a dev store can only take test payments, and Shopify does not expose
-  the test gateway through *any* API. Confirm it by hand once: **Settings → Payments** should show
-  the test payment gateway activated. The check asserts for real as soon as the store is on a paid
-  plan.
-- **warn, live store** — nothing is set up in **Settings → Payments**, so a buyer reaching checkout
-  has no way to pay. A warning rather than a failure because a store taking only a manual payment
-  method (bank transfer, cash on delivery) looks identical over the API — those are not reported
-  either. If you have a card gateway configured and still see this, it is not finished activating.
-
-For the record, these are all the surfaces that could have answered it, and none does:
-
-| Source | Reports the test gateway? |
-|---|---|
-| Storefront `shop.paymentSettings` (all 7 fields) | no — `acceptedCardBrands: []`, `shopifyPaymentsAccountId: null` |
-| Admin `shop.paymentSettings` | no — only `supportedDigitalWallets`, also empty |
-| REST `/payment_gateways.json` | no — endpoint removed (404) |
-| Checkout HTML | no — 403 to any non-browser client, whatever the headers |
-| `paymentSettings.cardVaultUrl` | no — Shopify's global PCI endpoint, identical for every store |
-
-`cartSubmitForCompletion` *would* settle it, but it places a real order, so it is categorically off
-limits here. `cartPaymentUpdate` only validates its own input and says nothing about gateway
-configuration — inferring from it would be a false-positive generator.
-
-**"The theme's add-to-cart endpoint rejected the variant"**
-`/cart/add.js` returned an error, and the message carries Shopify's own explanation — usually a
-stock limit. This is a real add-to-cart failure a customer would hit.
-
-**"The product page has no add-to-cart form"**
-The page loaded but has no `form[action*="/cart/add"]`. Either the theme is broken on that template
-or the product renders as unavailable. Load the URL in a browser to see which.
+**"Not configured yet" / the run is skipped**
+No Web Bot Auth signature is configured for this shop, or the stored one has expired. Go to
+**Settings**, create a signature in Shopify Admin → Online Store → Preferences → Crawler access,
+and save its values. There is no API to create or renew one — it has a hard 3-month maximum
+lifetime, so this will happen again; the Settings page shows a countdown once it's within 14 days
+of expiring.
 
 **"The storefront served a bot challenge"** (a `skip`, not a failure)
-Shopify fronts every storefront with Cloudflare, and Cloudflare answers a request it considers
-automated with an HTML interstitial titled *"Verifying your connection…"* — served under **HTTP
-429**, which is why it can read as rate limiting. It affects only the checks that touch the
-storefront over HTTP: 8, 9 and 13.
+Cloudflare blocked this browser session even with the Web Bot Auth signature attached. The
+signature may need to be re-created in Shopify Admin. This is the checker being blocked, not the
+store being broken.
 
-Nothing is wrong with your store or the app when this happens. It is triggered by the volume of
-automated requests from your IP, so it clears on its own — space checks out rather than firing
-several back to back. The eleven API checks are never affected.
+**"No add-to-cart control was found on the rendered product page"**
+This check only recognizes Shopify's standard `form[action*="/cart/add"]` add-to-cart form. A
+heavily customized theme layout may render it differently — this is a checker limitation, not
+necessarily a real problem.
 
-**"Checkout answered HTTP 403 to this non-browser request"** (a `skip`, not a failure)
-Checkout is the most bot-protected surface Shopify has and routinely refuses any non-browser client
-even when it is perfectly healthy. That is why check 13 is advisory: the real proof is check 12, the
-checkout URL Shopify issued for a cart that priced correctly and has a shipping rate.
+**"Found a quantity control, but couldn't interact with it"** / **"No checkout control was found"**
+The cart-quantity and checkout controls are matched by common theme conventions
+(`button[name="checkout"]`, `input[name^="updates["]`, etc.), which cover Shopify's own reference
+themes but not every custom theme. Reported as skipped rather than failed, since this reflects the
+checker's own coverage, not a confirmed store problem. If this happens on a standard theme, it's
+worth reporting — the selector likely needs widening.
 
-**"The Admin API rejected the app's access token"**
-The stored offline session has expired or was revoked. Open the app from Shopify Admin once to
-refresh it, then run the check again.
-
-**"The app is not allowed to create a Storefront API token"**
-The app is installed without the `unauthenticated_*` scopes. Run `npm run deploy`, then open the app
-in Admin and approve the updated permissions.
+**"Clicking through to checkout failed" / landed somewhere that doesn't look like checkout**
+A genuine finding: the checkout control was found and clicked, but didn't behave as expected. Worth
+investigating directly in a real browser.
 
 **"The storefront password was rejected"**
-The saved password is wrong, or it is for a different domain. Confirm the store really is protected:
+The saved password is wrong, or it's for a different domain. Confirm the store really is
+protected:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code} -> %{redirect_url}\n' https://your-store.com/products/some-product
 ```
 
 A `302` to `/password` means protected. Note that a **dev store re-locks itself**, so a check that
-passed earlier can start skipping the theme checks without you changing anything.
+passed earlier can start failing at the very first step without you changing anything.
 
 **A check is stuck on "running" forever**
 It cannot be. A run left unfinished by a server restart is reported as failed once it is more than
-five minutes old — see `STALE_AFTER_MS` in [app/atc/store.server.ts](app/atc/store.server.ts).
+five minutes old — see `STALE_AFTER_MS` in [app/atc/store.server.ts](app/atc/store.server.ts). A
+single run's own hard ceiling is much shorter — see `RUN_TIMEOUT_MS` in
+[app/atc/browser/launch.server.ts](app/atc/browser/launch.server.ts).
 
 ---
 
-## How the checker talks to Shopify
+## How the checker works
 
-Four transports, each doing what it is best at:
+One real, headless Chromium browser session per run — no Admin or Storefront API calls anywhere in
+the check engine. `app/atc/browser/launch.server.ts` owns a single warm Chromium process; each run
+gets one exclusive `BrowserContext`/`Page` for its entire duration (queued behind any run already
+in progress — this app runs on a single machine, so only one browser session is ever open at a
+time), released when the run ends or its hard time limit is hit.
 
-| Transport | Auth | Used for |
-|---|---|---|
-| Admin GraphQL API | the app's offline access token | checks 1–3 |
-| Storefront GraphQL API | a Storefront access token the app mints and caches | checks 2, 4–7, 10–11 |
-| Plain HTTPS to the storefront | the storefront password cookie, if set | checks 8–9, 13 |
+`app/atc/browser/web-bot-auth.server.ts` attaches the Web Bot Auth signature to every request the
+browser makes to the shop's own origin (and, best-effort, to Shopify's checkout host), scoped via
+`context.route()` rather than applied globally, so third-party requests the theme's own JS fires
+(analytics, payment SDKs) never see the credential.
 
-The Storefront token is minted once per shop through the Admin API
-(`storefrontAccessTokenCreate`) and cached in `ShopSetting.storefrontApiToken`, because tokens are a
-limited per-shop resource. If a cached one stops being accepted, `store.server.ts` discards it and
-mints a replacement rather than failing every future run.
+Each of the nine checks lives in its own file under `app/atc/checks/`, and reads the page the same
+way a person would: the add-to-cart form's own `id` field for which variant is selected, `<h1>` for
+the product title used to search, `/cart.js` (the same JSON the theme's own cart drawer reads) to
+confirm quantities and totals, a breadcrumb link for which collection to check. The first three
+checks (`home-reachable`, `product-page`, `add-to-cart`) are genuine prerequisites of one another —
+a failure there stops the run, since nothing after it could be judged meaningfully. Every check
+after that is judged independently: a broken discount code doesn't stop checkout from being tried.
 
-`Jar` in [app/atc/checker.server.ts](app/atc/checker.server.ts) exists because Node's `fetch` has no
-cookie jar: with `redirect: "follow"` it silently drops any cookie set by an intermediate hop. Three
-things depend on cookies crossing hops — the password unlock, the Ajax cart session, and the
-checkout permalink, where `/cart/c/<token>` sets a session cookie and *then* redirects to
-`/checkouts/cn/<id>`, which answers 403 without it.
-
-**This is not a licence to hammer the store.** The GraphQL APIs have generous documented limits, but
-the Ajax cart endpoints are rate-limited aggressively and Cloudflare escalates against sustained
-automated traffic. This is a periodic smoke check, not a loop.
+**This is not a licence to hammer the store.** This is a periodic smoke check, not a loop — space
+runs out rather than firing several back to back, and Cloudflare will escalate against sustained
+automated traffic regardless of authorization.
 
 ---
 
 ## Layout
 
 ```
-app/atc/checker.server.ts  the 13 checks — the whole engine, no browser
-app/atc/store.server.ts    starts runs, keeps live progress in memory, persists to SQLite
-app/atc/token.server.ts    mints and caches the Storefront API token
-app/atc/settings.server.ts stores the storefront password per shop
-app/atc/types.ts           RunStep / FlowRun / RunOptions shapes
-app/routes/app._index.tsx  the dashboard: product picker, Run button, live results by layer
-app/routes/api.runs.$id.tsx  polled for live progress
-scripts/atc-check.mjs      the same engine from the terminal
-prisma/schema.prisma       Session (Shopify) + ShopSetting + FlowRun (history)
+app/atc/checker.server.ts   the 9 checks — the whole engine, one continuous browser session
+app/atc/checks/             one file per journey stage: storefront, search, cart, checkout, collection
+app/atc/browser/            Chromium lifecycle, Web Bot Auth headers, challenge detection, screenshots
+app/atc/store.server.ts     starts runs, keeps live progress in memory, persists to SQLite
+app/atc/settings.server.ts  stores the storefront password per shop
+app/atc/web-bot-auth.server.ts   stores/resolves the Web Bot Auth signature per shop
+app/atc/types.ts            RunStep / FlowRun / RunOptions shapes
+app/atc/layers.ts           display metadata for the 4 layers (storefront/discovery/cart/checkout)
+app/routes/app._index.tsx   the dashboard: Run button, live results by layer, recent checks
+app/routes/app.settings.tsx storefront password + Web Bot Auth settings
+app/routes/api.runs.$id.tsx polled for live progress
+scripts/atc-check.mjs       the same engine from the terminal
+prisma/schema.prisma        Session (Shopify) + ShopSetting + FlowRun (history)
 ```
 
 `checker.server.ts` is imported by both the app and the CLI script. The CLI loads it as a raw `.ts`
-file through Node's `--experimental-strip-types`, which is why every relative import in it is
-**type-only** — Vite resolves extensionless imports, plain Node does not. Anything needing the
-database (the token cache, the password store) lives outside it and is passed in.
+file through Node's `--experimental-strip-types`, which is why every relative import in it ends in
+an explicit `.ts` extension — Vite resolves extensionless imports, plain Node does not.

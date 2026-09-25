@@ -36,3 +36,13 @@ pnpm-lock.yaml
 # Local production env + service logs
 .env.production
 .logs/
+
+#claude
+claude.md
+
+# Internal working docs (requirements/scoping) — not for version control
+/docs/
+
+# Local dev output of the browser-layer checks (production writes to the
+# Fly volume via SCREENSHOT_DIR instead)
+/screenshots/

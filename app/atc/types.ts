@@ -1,22 +1,29 @@
 /**
  * `warn` is a real signal, not a skip: the check ran and found something a
- * buyer would notice, but it is not proof the flow is broken (e.g. no card
- * brands enabled, which is also how a manual-payment-only store looks).
- * `skip` means the check could not run at all.
+ * buyer would notice, but it is not proof the flow is broken. `skip` means
+ * the check could not run at all (a prerequisite step didn't succeed, or
+ * nothing to test against, e.g. no discount code supplied).
  */
 export type StepStatus = "pending" | "running" | "pass" | "warn" | "fail" | "skip";
 
 export type RunStep = {
   key: string;
   title: string;
-  /** Which layer the step exercises — used to group the report. */
-  layer: "admin" | "storefront" | "theme" | "checkout";
+  /** Which stage of the buyer journey the step belongs to — used to group the report. */
+  layer: "storefront" | "discovery" | "cart" | "checkout";
   status: StepStatus;
   detail?: string;
   durationMs?: number;
+  /** Filesystem path to a viewport screenshot taken right after this step settled. */
+  screenshotPath?: string;
 };
 
-export type RunStatus = "queued" | "running" | "passed" | "failed";
+/**
+ * `skipped` is distinct from `failed`: it means nothing could be tested at
+ * all (no Web Bot Auth signature configured), not that a real problem was
+ * found.
+ */
+export type RunStatus = "queued" | "running" | "passed" | "failed" | "skipped";
 
 export type FlowRun = {
   id: string;
@@ -33,24 +40,25 @@ export type FlowRun = {
 };
 
 export type RunOptions = {
-  /** The *.myshopify.com domain — both GraphQL endpoints are called on it. */
+  /** The *.myshopify.com domain — used to scope stored settings and the run record. */
   shop: string;
-  /** Live storefront product URL; its origin is used for the theme HTTP checks. */
+  /** Live storefront product URL the real browser navigates to. */
   productUrl: string;
   quantity?: number;
-  /** Offline Admin API access token for `shop`. Never persisted with the run. */
-  adminToken: string;
   /** Only needed while the storefront is password protected. */
   storefrontPassword?: string;
   /**
-   * Ship-to country for the shipping-rate probe. Defaults to the shop's own
-   * address, falling back to the shop's country.
+   * Discount code to apply to the real cart. Optional — we can't invent a
+   * valid code, so the discount check is skipped (not failed) when omitted.
    */
-  country?: string;
+  discountCode?: string;
   /**
-   * Postal code for that country. Shopify will not resolve a rate for the US
-   * (among others) without one, so supplying it turns an inconclusive result
-   * into a real assertion.
+   * Web Bot Auth credentials (Shopify Admin → Online Store → Preferences →
+   * Crawler access) — what gets every check past Cloudflare's bot challenge
+   * on the storefront (and, best-effort, on checkout). Not checked for
+   * expiry here — the caller resolves an already-valid pair or omits both,
+   * in which case the whole run is skipped.
    */
-  zip?: string;
+  webBotAuthSignature?: string;
+  webBotAuthSignatureInput?: string;
 };

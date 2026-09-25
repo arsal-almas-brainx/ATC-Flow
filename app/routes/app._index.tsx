@@ -8,12 +8,12 @@ import { useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { listRuns, startRun } from "../atc/store.server";
-import {
-  hasStorefrontPassword,
-  resolveStorefrontPassword,
-  saveStorefrontPassword,
-} from "../atc/settings.server";
-import type { FlowRun, RunStep } from "../atc/types";
+import { resolveStorefrontPassword } from "../atc/settings.server";
+import { resolveWebBotAuthCredentials } from "../atc/web-bot-auth.server";
+import { LAYERS } from "../atc/layers";
+import type { FlowRun } from "../atc/types";
+import { RunDetail } from "../components/RunDetail";
+import { StatusBadge } from "../components/StatusBadge";
 
 type ProductOption = { handle: string; title: string; url: string };
 
@@ -60,32 +60,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     storefrontHost: host,
     products,
     runs: await listRuns(session.shop, 10),
-    // Never send the password itself back to the browser — only whether one is set.
-    passwordSaved: await hasStorefrontPassword(session.shop),
   };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
-  const intent = String(form.get("intent") ?? "run");
-
-  if (intent === "save-password") {
-    const saved = await saveStorefrontPassword(
-      session.shop,
-      String(form.get("storefrontPassword") ?? ""),
-    );
-    return {
-      savedMessage: saved
-        ? "Storefront password saved. Every check will use it automatically."
-        : "Storefront password cleared.",
-    };
-  }
 
   const productUrl = String(form.get("productUrl") ?? "").trim();
   const quantity = Math.max(1, Number(form.get("quantity") ?? 1) || 1);
-  const country = String(form.get("country") ?? "").trim().toUpperCase();
-  const zip = String(form.get("zip") ?? "").trim();
+  const discountCode = String(form.get("discountCode") ?? "").trim();
 
   if (!productUrl) {
     return { error: "Pick a product or paste a product URL first." };
@@ -93,71 +77,44 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (!/^https?:\/\//i.test(productUrl)) {
     return { error: "The product URL must start with https://" };
   }
-  if (country && !/^[A-Z]{2}$/.test(country)) {
-    return { error: "Country must be a two-letter code, for example US or PK." };
-  }
+
+  const webBotAuth = await resolveWebBotAuthCredentials(session.shop);
 
   const run = startRun({
     shop: session.shop,
     productUrl,
     quantity,
-    // The checker calls the Admin API directly, so it needs the offline token
-    // this session already holds. It is never persisted with the run.
-    adminToken: session.accessToken!,
-    country: country || undefined,
-    zip: zip || undefined,
+    discountCode: discountCode || undefined,
     // A password typed into the run form wins; otherwise use the saved one.
     storefrontPassword: await resolveStorefrontPassword(
       session.shop,
       String(form.get("storefrontPassword") ?? ""),
     ),
+    webBotAuthSignature: webBotAuth?.signature,
+    webBotAuthSignatureInput: webBotAuth?.signatureInput,
   });
 
   return { runId: run.id };
 };
 
-const LAYERS: Array<{ key: RunStep["layer"]; title: string; blurb: string }> = [
-  {
-    key: "admin",
-    title: "Store & product",
-    blurb: "Admin API — what the store is actually configured to sell.",
-  },
-  {
-    key: "storefront",
-    title: "Buyer path",
-    blurb: "Storefront Cart API — the same cart a real buyer builds.",
-  },
-  {
-    key: "theme",
-    title: "Theme",
-    blurb: "Plain HTTP to the live storefront and the theme's own cart endpoint.",
-  },
-  {
-    key: "checkout",
-    title: "Checkout readiness",
-    blurb:
-      "Shipping, payment and the issued checkout. On a development store the " +
-      "payment check warns instead of asserting — Shopify exposes no API for " +
-      "the test gateway.",
-  },
-];
-
 export default function Index() {
-  const { products, storefrontHost, runs, passwordSaved } =
-    useLoaderData<typeof loader>();
+  const { products, storefrontHost, runs } = useLoaderData<typeof loader>();
   const starter = useFetcher<typeof action>();
-  const saver = useFetcher<typeof action>();
   const poller = useFetcher<{ run: FlowRun | null }>();
   const revalidator = useRevalidator();
 
   const formRef = useRef<HTMLFormElement>(null);
-  const settingsRef = useRef<HTMLFormElement>(null);
   const selectRef = useRef<HTMLElementTagNameMap["s-select"]>(null);
   const urlRef = useRef<HTMLElementTagNameMap["s-text-field"]>(null);
 
   // A run opened from the history list. Cleared whenever a new run is started,
   // so the freshly started run always wins.
   const [pickedRunId, setPickedRunId] = useState<string | null>(null);
+
+  // With no auto-pickable product, there is nothing to collapse — a URL is
+  // required, so the options stay open from the start.
+  const [showAdvanced, setShowAdvanced] = useState(products.length === 0);
+  const autoProduct = products[0] ?? null;
 
   const startedRunId =
     starter.data && "runId" in starter.data ? starter.data.runId : null;
@@ -204,22 +161,9 @@ export default function Index() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled, activeRun?.id]);
 
-  // Reflect a saved/cleared password in the "Saved" badge.
-  const savedMessage =
-    saver.data && "savedMessage" in saver.data ? saver.data.savedMessage : null;
-  useEffect(() => {
-    if (savedMessage) revalidator.revalidate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedMessage]);
-
   const submit = () => {
     setPickedRunId(null);
     if (formRef.current) starter.submit(formRef.current, { method: "POST" });
-  };
-
-  const savePassword = () => {
-    if (settingsRef.current)
-      saver.submit(settingsRef.current, { method: "POST" });
   };
 
   const busy = starter.state !== "idle" || inFlight;
@@ -238,71 +182,77 @@ export default function Index() {
 
       <s-section heading="What to check">
         <s-paragraph>
-          This runs 13 checks against <s-text>{storefrontHost}</s-text> through
-          Shopify&apos;s Admin and Storefront APIs: it resolves the product, builds a
-          real cart, prices it, asks for a shipping rate and confirms a checkout
-          is issued. It stops there:{" "}
-          <s-text type="strong">
-            no order is placed and no payment is taken
-          </s-text>
-          .
+          This uses a real browser to test <s-text>{storefrontHost}</s-text> exactly like a
+          real visitor would: it loads your homepage and product page, searches for the
+          product, clicks the real Add-to-cart button, checks the cart, changes its
+          quantity, applies a discount code, and clicks through to checkout. It stops
+          there: <s-text type="strong">no order is placed and no payment is taken</s-text>.
+          Requires a Web Bot Auth signature configured under Settings.
         </s-paragraph>
+
+        {autoProduct && (
+          <s-paragraph>
+            Nothing else to fill in — this store is already connected, so{" "}
+            <s-text type="strong">Run check</s-text> tests{" "}
+            <s-text type="strong">{autoProduct.title}</s-text> automatically.{" "}
+            <s-clickable onClick={() => setShowAdvanced((v) => !v)}>
+              <s-text color="subdued">
+                {showAdvanced ? "Hide advanced options" : "Test a different product, or set advanced options"}
+              </s-text>
+            </s-clickable>
+          </s-paragraph>
+        )}
 
         <form ref={formRef} onSubmit={(e) => e.preventDefault()}>
           <input type="hidden" name="intent" value="run" />
           <s-stack direction="block" gap="base">
-            {products.length > 0 ? (
-              <s-select ref={selectRef} label="Product" name="product">
-                {products.map((p) => (
-                  <s-option key={p.handle} value={p.url}>
-                    {p.title}
-                  </s-option>
-                ))}
-              </s-select>
-            ) : (
-              <s-banner
-                tone="warning"
-                heading="No in-stock active products found"
-              >
-                <s-paragraph>Paste a product URL below instead.</s-paragraph>
-              </s-banner>
-            )}
+            <div hidden={!showAdvanced}>
+              <s-stack direction="block" gap="base">
+                {products.length > 0 ? (
+                  <s-select ref={selectRef} label="Product" name="product">
+                    {products.map((p) => (
+                      <s-option key={p.handle} value={p.url}>
+                        {p.title}
+                      </s-option>
+                    ))}
+                  </s-select>
+                ) : (
+                  <s-banner
+                    tone="warning"
+                    heading="No in-stock active products found"
+                  >
+                    <s-paragraph>Paste a product URL below instead.</s-paragraph>
+                  </s-banner>
+                )}
 
-            <s-text-field
-              ref={urlRef}
-              label="Product URL"
-              name="productUrl"
-              defaultValue={products[0]?.url ?? ""}
-              details="Any live product URL on this store."
-            />
+                <s-text-field
+                  ref={urlRef}
+                  label="Product URL"
+                  name="productUrl"
+                  defaultValue={products[0]?.url ?? ""}
+                  details="Any live product URL on this store."
+                />
 
-            <s-stack direction="inline" gap="base">
-              <s-number-field
-                label="Quantity"
-                name="quantity"
-                defaultValue="1"
-                min={1}
-              />
-              <s-text-field
-                label="Ship-to country"
-                name="country"
-                details="Two-letter code. Blank uses the store's own address."
-              />
-              <s-text-field
-                label="Ship-to postal code"
-                name="zip"
-                details="Shopify needs one to resolve a rate for many countries."
-              />
-              <s-password-field
-                label="Storefront password"
-                name="storefrontPassword"
-                details={
-                  passwordSaved
-                    ? "A saved password will be used — fill this in only to override it for this check."
-                    : "Only if the store is password protected. Save it below to reuse it."
-                }
-              />
-            </s-stack>
+                <s-stack direction="inline" gap="base">
+                  <s-number-field
+                    label="Quantity"
+                    name="quantity"
+                    defaultValue="1"
+                    min={1}
+                  />
+                  <s-password-field
+                    label="Storefront password"
+                    name="storefrontPassword"
+                    details="Only if the store is password protected and you want to override the saved one for this check."
+                  />
+                  <s-text-field
+                    label="Discount code (optional)"
+                    name="discountCode"
+                    details="Applied to the test cart to confirm it reduces the total. Leave blank to skip this check."
+                  />
+                </s-stack>
+              </s-stack>
+            </div>
 
             {startError && (
               <s-banner tone="critical" heading="Could not start">
@@ -324,47 +274,6 @@ export default function Index() {
       </s-section>
 
       {activeRun && <RunDetail run={activeRun} />}
-
-      <s-section heading="Storefront password">
-        <s-stack direction="block" gap="base">
-          <s-stack direction="inline" gap="small-200" alignItems="center">
-            <s-text>Status:</s-text>
-            <s-badge tone={passwordSaved ? "success" : "neutral"}>
-              {passwordSaved ? "Saved" : "Not set"}
-            </s-badge>
-          </s-stack>
-
-          <s-paragraph>
-            The API checks work either way. Save the password (Online Store →
-            Preferences → Password protection) to also cover the two theme
-            checks, which load the real product page.
-          </s-paragraph>
-
-          <form ref={settingsRef} onSubmit={(e) => e.preventDefault()}>
-            <input type="hidden" name="intent" value="save-password" />
-            <s-stack direction="block" gap="base">
-              <s-password-field
-                label="Storefront password"
-                name="storefrontPassword"
-                details="Leave blank and save to clear the stored password."
-              />
-              <s-stack direction="inline" gap="base">
-                <s-button
-                  onClick={savePassword}
-                  {...(saver.state !== "idle" ? { loading: true } : {})}
-                >
-                  {passwordSaved ? "Update password" : "Save password"}
-                </s-button>
-              </s-stack>
-              {savedMessage && (
-                <s-banner tone="success" heading="Saved">
-                  <s-paragraph>{savedMessage}</s-paragraph>
-                </s-banner>
-              )}
-            </s-stack>
-          </form>
-        </s-stack>
-      </s-section>
 
       <s-section slot="aside" heading="Recent checks">
         {runs.length === 0 ? (
@@ -395,118 +304,6 @@ export default function Index() {
       </s-section>
     </s-page>
   );
-}
-
-function RunDetail({ run }: { run: FlowRun }) {
-  const warnings = run.steps.filter((s) => s.status === "warn").length;
-
-  const heading =
-    run.status === "failed"
-      ? "The flow is broken"
-      : run.status === "passed"
-        ? warnings
-          ? "Flow works, with warnings"
-          : "Flow verified through checkout"
-        : "Checking…";
-
-  const duration =
-    run.finishedAt != null
-      ? `${((run.finishedAt - run.startedAt) / 1000).toFixed(1)}s`
-      : null;
-
-  const done = run.steps.filter((s) =>
-    ["pass", "warn", "fail", "skip"].includes(s.status),
-  ).length;
-
-  return (
-    <s-section heading={heading}>
-      <s-stack direction="inline" gap="base" alignItems="center">
-        <StatusBadge status={run.status} />
-        <s-text color="subdued">
-          {done}/{run.steps.length} checks
-        </s-text>
-        {duration && <s-text color="subdued">{duration}</s-text>}
-        {run.cartTotal && (
-          <s-text color="subdued">Order total {run.cartTotal}</s-text>
-        )}
-      </s-stack>
-
-      {run.error && (
-        <s-banner tone="critical" heading="What is wrong">
-          <s-paragraph>{run.error}</s-paragraph>
-        </s-banner>
-      )}
-
-      {run.status === "passed" && warnings > 0 && (
-        <s-banner tone="warning" heading="Worth a look">
-          <s-paragraph>
-            The flow reaches checkout, but {warnings} check
-            {warnings > 1 ? "s" : ""} found something a buyer would notice — see
-            the amber rows below.
-          </s-paragraph>
-        </s-banner>
-      )}
-
-      {LAYERS.map((layer) => {
-        const steps = run.steps.filter((s) => s.layer === layer.key);
-        if (!steps.length) return null;
-        return (
-          <s-stack key={layer.key} direction="block" gap="small-500">
-            <s-text type="strong">{layer.title}</s-text>
-            {steps.map((step) => (
-              <StepRow key={step.key} step={step} />
-            ))}
-          </s-stack>
-        );
-      })}
-
-      {run.checkoutUrl && (
-        <s-paragraph>
-          Checkout reached:{" "}
-          <s-link href={run.checkoutUrl} target="_blank">
-            {run.checkoutUrl}
-          </s-link>
-        </s-paragraph>
-      )}
-    </s-section>
-  );
-}
-
-const STEP_ICON: Record<RunStep["status"], string> = {
-  pass: "✅",
-  warn: "⚠️",
-  fail: "❌",
-  running: "⏳",
-  skip: "⏭️",
-  pending: "•",
-};
-
-function StepRow({ step }: { step: RunStep }) {
-  return (
-    <s-box padding="small-200" borderWidth="base" borderRadius="base">
-      <s-stack direction="block" gap="small-500">
-        <s-stack direction="inline" gap="small-200" alignItems="center">
-          <s-text>{STEP_ICON[step.status]}</s-text>
-          <s-text type="strong">{step.title}</s-text>
-          {step.durationMs != null && (
-            <s-text color="subdued">{step.durationMs}ms</s-text>
-          )}
-        </s-stack>
-        {step.detail && <s-text color="subdued">{step.detail}</s-text>}
-      </s-stack>
-    </s-box>
-  );
-}
-
-const STATUS_TONE = {
-  passed: "success",
-  failed: "critical",
-  running: "info",
-  queued: "neutral",
-} as const;
-
-function StatusBadge({ status }: { status: FlowRun["status"] }) {
-  return <s-badge tone={STATUS_TONE[status]}>{status}</s-badge>;
 }
 
 export const headers: HeadersFunction = (headersArgs) => {

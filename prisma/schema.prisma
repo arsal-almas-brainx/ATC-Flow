@@ -40,16 +40,18 @@ model Session {
 model ShopSetting {
   shop String @id
 
-  /// Storefront (password-protection) password. Used only by the two theme
-  /// checks, which load the real product page over HTTP. Stored as-is because it
-  /// has to be replayed to the password form — this is the shared storefront
-  /// preview password, not an admin credential.
+  /// Storefront (password-protection) password. Replayed through the real
+  /// password form by the browser checker before anything else navigates —
+  /// this is the shared storefront preview password, not an admin credential.
   storefrontPassword String?
 
-  /// Storefront API access token, minted on demand via the Admin API and cached
-  /// here because tokens are a limited per-shop resource. The checker builds its
-  /// carts through the Storefront GraphQL API with it.
-  storefrontApiToken String?
+  /// Web Bot Auth signature, created manually in Shopify Admin → Online Store →
+  /// Preferences → Crawler access. No API creates or renews these — max
+  /// 3-month lifetime — so webBotAuthExpiresAt must be tracked and surfaced,
+  /// not assumed. Signature-Agent is not stored: it's always "https://shopify.com".
+  webBotAuthSignature      String?
+  webBotAuthSignatureInput String?
+  webBotAuthExpiresAt      DateTime?
 
   updatedAt DateTime @updatedAt
 }
@@ -60,7 +62,7 @@ model FlowRun {
   shop        String
   productUrl  String
   quantity    Int       @default(1)
-  status      String // queued | running | passed | failed
+  status      String // queued | running | passed | failed | skipped
   startedAt   DateTime
   finishedAt  DateTime?
   error       String?

@@ -22,6 +22,10 @@ primary_region = "bom"
   SHOPIFY_API_KEY = "de8fdbefc8058f2b8e91a7750c7ded10"
   SCOPES = "read_products,unauthenticated_read_product_listings,unauthenticated_write_checkouts"
 
+  # Failure screenshots from the browser-layer check, on the same persistent
+  # volume as the database so they survive restarts.
+  SCREENSHOT_DIR = "/data/screenshots"
+
 [[mounts]]
   source = "data"
   destination = "/data"
@@ -38,5 +42,11 @@ primary_region = "bom"
   processes = ["app"]
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  # Bumped to 2048mb: every check is now browser-driven and one run holds
+  # Chromium open for its entire duration (home -> product -> search -> cart
+  # -> checkout -> collection), not just a couple of quick steps like the
+  # previous 1024mb sizing assumed. A single Chromium instance alone can
+  # already peak at 300-500MB; holding it open for a whole run's worth of
+  # navigations, alongside the Node/Prisma process, needs real headroom.
+  size = "shared-cpu-2x"
+  memory = "2048mb"

@@ -16,6 +16,11 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --include=dev
 
+# Chromium + its system libraries for the browser-layer checks (Web Bot Auth).
+# Kept as its own layer, before COPY . ., so an app-code change doesn't bust
+# the ~300MB download cache.
+RUN npx playwright install --with-deps chromium
+
 COPY . .
 
 # Generate the Prisma client for *this* platform, then build the app.

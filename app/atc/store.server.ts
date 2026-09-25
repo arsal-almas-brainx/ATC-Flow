@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import prisma from "../db.server";
 import { blankRun, runCheck } from "./checker.server";
-import { getStorefrontToken, refreshStorefrontToken } from "./token.server";
 import type { FlowRun, RunOptions } from "./types";
 
 /**
@@ -23,7 +22,7 @@ export function startRun(opts: RunOptions): FlowRun {
   void persist(run);
 
   // Fire and forget — the UI polls getRun() for progress.
-  void runCheck(run, opts, () => resolveToken(opts), (updated) => {
+  void runCheck(run, opts, (updated) => {
     live.set(updated.id, { ...updated, steps: updated.steps.map((s) => ({ ...s })) });
     void persist(updated);
   })
@@ -42,23 +41,6 @@ export function startRun(opts: RunOptions): FlowRun {
     });
 
   return run;
-}
-
-/**
- * Hands the checker a Storefront API token, re-minting once if the cached one
- * has been revoked — otherwise a stale cached token would fail every future run
- * with no way to recover from the UI.
- */
-async function resolveToken(opts: RunOptions): Promise<string> {
-  const token = await getStorefrontToken(opts.shop, opts.adminToken);
-  const ok = await fetch(`https://${opts.shop}/api/2025-10/graphql.json`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Shopify-Storefront-Access-Token": token },
-    body: JSON.stringify({ query: "{ shop { name } }" }),
-  })
-    .then((r) => r.ok)
-    .catch(() => false);
-  return ok ? token : refreshStorefrontToken(opts.shop, opts.adminToken);
 }
 
 export async function getRun(id: string): Promise<FlowRun | null> {
