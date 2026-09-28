@@ -30,6 +30,13 @@ model Store {
   productUrls  String  @default("")
   discountCode String?
 
+  /// Optional term typed into the store's search. Without it, search uses the
+  /// tested product's own title.
+  searchQuery String?
+
+  /// Slack channel ID (e.g. C0123ABCD) for this client's reports.
+  slackChannel String?
+
   /// Storefront (password-protection) password. Replayed through the real
   /// password form by the browser checker before anything else navigates —
   /// this is the shared storefront preview password, not an admin credential.
@@ -46,6 +53,17 @@ model Store {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   runs      FlowRun[]
+}
+
+/// Global settings — a single row (id 1).
+model AppSetting {
+  id Int @id @default(1)
+
+  /// Slack channel IDs that receive every store's reports.
+  pdcSlackChannel      String?
+  deptHeadSlackChannel String?
+
+  updatedAt DateTime @updatedAt
 }
 
 /// One execution of the add-to-cart → checkout verification flow.

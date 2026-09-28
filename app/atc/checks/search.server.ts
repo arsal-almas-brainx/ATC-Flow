@@ -3,7 +3,11 @@ import { Skip, Warn } from "../shared.server.ts";
 import { assertNoChallengeOnPage } from "../browser/challenge.server.ts";
 
 /**
- * Types the product's own rendered title into the theme's search (navigating
+ * With a configured `searchQuery`, searches for that term and passes when any
+ * product comes back — zero results for a term the store is known to sell is
+ * a real finding.
+ *
+ * Otherwise types the product's own rendered title into the theme's search (navigating
  * straight to the search results URL, which every theme serves) and confirms
  * a real visitor searching for this product would find it. Empty results are
  * a Warn (likely search-indexing lag), not proof the flow is broken; results
@@ -14,8 +18,10 @@ export async function checkSearchResults(
   origin: string,
   productTitle: string,
   handle: string,
+  searchQuery?: string,
 ): Promise<string> {
-  const term = productTitle.replace(/["':]/g, "").trim().slice(0, 60);
+  const configured = searchQuery?.trim();
+  const term = configured || productTitle.replace(/["':]/g, "").trim().slice(0, 60);
   if (!term) {
     throw new Skip("No usable product title was read from the page, so a search term could not be derived.");
   }
@@ -34,6 +40,14 @@ export async function checkSearchResults(
   await assertNoChallengeOnPage("the search results page", page, response);
   if (!response?.ok()) {
     throw new Error(`Search returned HTTP ${response?.status() ?? "unknown"} in a real browser`);
+  }
+
+  if (configured) {
+    const results = await page.locator('a[href*="/products/"]').count();
+    if (results === 0) {
+      throw new Error(`Search for "${term}" returned no products.`);
+    }
+    return `Search for "${term}" returned product results`;
   }
 
   const matched = await page.locator(`a[href*="/products/${handle}"]`).count();

@@ -182,7 +182,7 @@ export default function StoreDashboard() {
                   ref={urlRef}
                   label="Product URL"
                   name="productUrl"
-                  defaultValue={products[0] ?? ""}
+                  value={products[0] ?? ""}
                   details="Any live product URL on this store."
                 />
 
@@ -190,13 +190,13 @@ export default function StoreDashboard() {
                   <s-number-field
                     label="Quantity"
                     name="quantity"
-                    defaultValue="1"
+                    value="1"
                     min={1}
                   />
                   <s-text-field
                     label="Discount code (optional)"
                     name="discountCode"
-                    defaultValue={store.discountCode}
+                    value={store.discountCode}
                     details="Applied to the test cart. Leave blank to skip this check."
                   />
                 </s-stack>

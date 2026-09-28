@@ -4,13 +4,26 @@ import type { Store } from "@prisma/client";
 import prisma from "../db.server";
 import { resolveWebBotAuthCredentials } from "./web-bot-auth.server";
 import { screenshotRoot } from "./browser/screenshots.server";
+import { parseSlackChannel } from "./slack.server";
 import type { RunOptions } from "./types";
 
+/** Raw form values. Optional fields may be omitted (e.g. the quick "Add a store" form). */
 export type StoreInput = {
   name: string;
   url: string;
   productUrls: string;
-  discountCode: string;
+  discountCode?: string;
+  searchQuery?: string;
+  slackChannel?: string;
+};
+
+export type StoreData = {
+  name: string;
+  url: string;
+  productUrls: string;
+  discountCode: string | null;
+  searchQuery: string | null;
+  slackChannel: string | null;
 };
 
 export function listStores() {
@@ -31,7 +44,7 @@ export function productUrlList(store: Pick<Store, "productUrls">): string[] {
 /** Returns an error message, or the cleaned values ready to save. */
 export function validateStoreInput(
   input: StoreInput,
-): { error: string } | { data: StoreInput } {
+): { error: string } | { data: StoreData } {
   const name = input.name.trim();
   if (!name) return { error: "Give the store a name." };
 
@@ -61,27 +74,27 @@ export function validateStoreInput(
     }
   }
 
+  const slack = parseSlackChannel(input.slackChannel ?? "", "Client Slack channel");
+  if ("error" in slack) return { error: slack.error };
+
   return {
     data: {
       name,
       url,
       productUrls: products.join("\n"),
-      discountCode: input.discountCode.trim(),
+      discountCode: input.discountCode?.trim() || null,
+      searchQuery: input.searchQuery?.trim() || null,
+      slackChannel: slack.value,
     },
   };
 }
 
-export function createStore(data: StoreInput) {
-  return prisma.store.create({
-    data: { ...data, discountCode: data.discountCode || null },
-  });
+export function createStore(data: StoreData) {
+  return prisma.store.create({ data });
 }
 
-export function updateStore(id: string, data: StoreInput) {
-  return prisma.store.update({
-    where: { id },
-    data: { ...data, discountCode: data.discountCode || null },
-  });
+export function updateStore(id: string, data: StoreData) {
+  return prisma.store.update({ where: { id }, data });
 }
 
 export async function deleteStore(id: string) {
@@ -126,6 +139,7 @@ export function runOptionsFor(
     productUrl: overrides.productUrl || productUrlList(store)[0] || "",
     quantity: overrides.quantity ?? 1,
     discountCode: overrides.discountCode || store.discountCode || undefined,
+    searchQuery: store.searchQuery ?? undefined,
     storefrontPassword: store.storefrontPassword ?? undefined,
     webBotAuthSignature: webBotAuth?.signature,
     webBotAuthSignatureInput: webBotAuth?.signatureInput,

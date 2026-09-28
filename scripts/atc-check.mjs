@@ -5,6 +5,7 @@
  *   npm run atc:check -- https://your-store.com/products/x --qty 2
  *   npm run atc:check -- https://your-store.com/products/x --password hunter2 --save
  *   npm run atc:check -- https://your-store.com/products/x --discount SAVE10
+ *   npm run atc:check -- https://your-store.com/products/x --search "gift card"
  *   npm run atc:check -- https://your-store.com/products/x --wba-signature ... \
  *                              --wba-signature-input ... --wba-expires 2026-12-01 --save
  *
@@ -33,7 +34,7 @@ const target = argv.find((a) => !a.startsWith("--"));
 
 if (!target) {
   console.error(
-    "Usage: npm run atc:check -- <product-url> [--qty N] [--password P] [--discount CODE] [--save]\n" +
+    "Usage: npm run atc:check -- <product-url> [--qty N] [--password P] [--discount CODE] [--search TERM] [--save]\n" +
       "                              [--wba-signature S] [--wba-signature-input SI] [--wba-expires DATE]",
   );
   process.exit(2);
@@ -120,7 +121,8 @@ const opts = {
   productUrl: target,
   quantity: Math.max(1, Number(flag("qty") ?? 1) || 1),
   storefrontPassword: password,
-  discountCode: flag("discount"),
+  discountCode: flag("discount") ?? store.discountCode ?? undefined,
+  searchQuery: flag("search") ?? store.searchQuery ?? undefined,
   webBotAuthSignature: webBotAuthConfigured ? webBotAuthSignature : undefined,
   webBotAuthSignatureInput: webBotAuthConfigured ? webBotAuthSignatureInput : undefined,
 };

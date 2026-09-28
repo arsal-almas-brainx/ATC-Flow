@@ -26,14 +26,19 @@ export default function AppLayout() {
         <Link to="/app" style={{ color: "#fff", textDecoration: "none", fontWeight: 600 }}>
           ATC Flow · Super admin
         </Link>
-        <Form method="post" action="/logout">
-          <button
-            type="submit"
-            style={{ background: "none", border: 0, color: "#fff", font: "inherit", cursor: "pointer" }}
-          >
-            Sign out
-          </button>
-        </Form>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <Link to="/app/settings" style={{ color: "#fff", textDecoration: "none" }}>
+            Settings
+          </Link>
+          <Form method="post" action="/logout">
+            <button
+              type="submit"
+              style={{ background: "none", border: 0, color: "#fff", font: "inherit", cursor: "pointer" }}
+            >
+              Sign out
+            </button>
+          </Form>
+        </div>
       </header>
       <Outlet />
     </>

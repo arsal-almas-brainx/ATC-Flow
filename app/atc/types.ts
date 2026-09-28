@@ -53,6 +53,12 @@ export type RunOptions = {
    */
   discountCode?: string;
   /**
+   * Term typed into the store's search instead of the product's own title.
+   * With it, search passes when it returns any product — the term need not
+   * match the product under test.
+   */
+  searchQuery?: string;
+  /**
    * Web Bot Auth credentials (Shopify Admin → Online Store → Preferences →
    * Crawler access) — what gets every check past Cloudflare's bot challenge
    * on the storefront (and, best-effort, on checkout). Not checked for

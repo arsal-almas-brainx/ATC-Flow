@@ -73,7 +73,9 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
   store, or change the quantity or discount code for this one run. **Recent checks** (right
   sidebar) re-opens any past run.
 - **A store's Settings**
-  - *Store details* — name, URL, product URLs, and a discount code applied on every check.
+  - *Store details* — name, URL, product URLs, a discount code applied on every check, an
+    optional search query (typed into the store's search instead of the product's name — passes
+    when it returns any product), and the client's Slack channel ID.
   - *Web Bot Auth* — the signature that gets the browser past Cloudflare, created in that store's
     Shopify Admin → Online Store → Preferences → Crawler access. Shows **Not configured / Active /
     Expires in N days / Expired**. There is no API to create or renew one, so the badge is the only
@@ -81,6 +83,11 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
   - *Storefront password* — only while the store is password protected. Never sent back to the
     browser — only whether one is stored.
   - *Delete store* — removes it with all of its check history and screenshots.
+
+- **Settings** (`/app/settings`) — the PDC and department-head Slack channel IDs, which receive
+  every store's report. Posting uses one Slack bot whose token is the `SLACK_BOT_TOKEN` environment
+  variable; invite the bot to each channel. In Slack, a channel's ID is at the bottom of its
+  details panel.
 
 ## Checking from the terminal
 
@@ -91,6 +98,7 @@ admin; its saved password and Web Bot Auth signature are used:
 npm run atc:check -- https://your-store.com/products/some-product
 npm run atc:check -- https://your-store.com/products/x --qty 2
 npm run atc:check -- https://your-store.com/products/x --discount SAVE10
+npm run atc:check -- https://your-store.com/products/x --search "gift card"
 npm run atc:check -- https://your-store.com/products/x \
   --wba-signature '...' --wba-signature-input '...' --wba-expires 2026-12-01 --save
 ```
@@ -249,6 +257,8 @@ app/atc/checks/             one file per journey stage: storefront, search, cart
 app/atc/browser/            Chromium lifecycle, Web Bot Auth headers, challenge detection, screenshots
 app/atc/store.server.ts     starts runs, keeps live progress in memory, persists to SQLite
 app/atc/stores.server.ts    store config: CRUD, validation, building a run's options
+app/atc/app-settings.server.ts   global settings (PDC / department-head Slack channels)
+app/atc/slack.server.ts     Slack bot config + channel ID validation
 app/atc/web-bot-auth.server.ts   resolves a store's Web Bot Auth signature and its expiry status
 app/atc/types.ts            RunStep / FlowRun / RunOptions shapes
 app/atc/layers.ts           display metadata for the 4 layers (storefront/discovery/cart/checkout)
@@ -257,9 +267,10 @@ app/routes/login.tsx        sign in
 app/routes/app._index.tsx   all stores + add a store
 app/routes/app.stores.$id._index.tsx    a store's dashboard: Run button, live results, recent checks
 app/routes/app.stores.$id.settings.tsx  a store's details, storefront password, Web Bot Auth
+app/routes/app.settings.tsx global settings
 app/routes/api.runs.$id.tsx polled for live progress
 scripts/atc-check.mjs       the same engine from the terminal
-prisma/schema.prisma        Store (config) + FlowRun (history)
+prisma/schema.prisma        Store (config) + AppSetting (global) + FlowRun (history)
 ```
 
 `checker.server.ts` is imported by both the app and the CLI script. The CLI loads it as a raw `.ts`

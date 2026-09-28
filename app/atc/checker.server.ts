@@ -185,7 +185,7 @@ export async function runCheck(
       });
 
       await stepIsolated("search-results", () =>
-        checkSearchResults(page, origin, productTitle, handle),
+        checkSearchResults(page, origin, productTitle, handle, opts.searchQuery),
       );
 
       await step("add-to-cart", () =>

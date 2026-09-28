@@ -28,6 +28,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       url: store.url,
       productUrls: store.productUrls,
       discountCode: store.discountCode ?? "",
+      searchQuery: store.searchQuery ?? "",
+      slackChannel: store.slackChannel ?? "",
     },
     // Never send secret values back to the browser — only their status.
     passwordSaved: store.storefrontPassword !== null,
@@ -47,6 +49,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       url: String(form.get("url") ?? ""),
       productUrls: String(form.get("productUrls") ?? ""),
       discountCode: String(form.get("discountCode") ?? ""),
+      searchQuery: String(form.get("searchQuery") ?? ""),
+      slackChannel: String(form.get("slackChannel") ?? ""),
     });
     if ("error" in result) return { detailsError: result.error };
     await updateStore(store.id, result.data);
@@ -150,20 +154,33 @@ export default function StoreSettings() {
         <form ref={detailsFormRef} onSubmit={(e) => e.preventDefault()}>
           <input type="hidden" name="intent" value="save-details" />
           <s-stack direction="block" gap="base">
-            <s-text-field label="Name" name="name" defaultValue={store.name} />
-            <s-url-field label="Store URL" name="url" defaultValue={store.url} />
+            <s-text-field label="Name" name="name" value={store.name} />
+            <s-url-field label="Store URL" name="url" value={store.url} />
             <s-text-area
               label="Product URLs"
               name="productUrls"
               rows={4}
-              defaultValue={store.productUrls}
+              value={store.productUrls}
               details="One per line. The first one is used when you press Run check."
             />
             <s-text-field
               label="Discount code (optional)"
               name="discountCode"
-              defaultValue={store.discountCode}
+              value={store.discountCode}
               details="Applied on every check. Leave blank to skip the discount check."
+            />
+            <s-text-field
+              label="Search query (optional)"
+              name="searchQuery"
+              value={store.searchQuery}
+              details="Typed into the store's search. Leave blank to search for the tested product's name."
+            />
+            <s-text-field
+              label="Client Slack channel ID (optional)"
+              name="slackChannel"
+              value={store.slackChannel}
+              placeholder="C0123ABCD"
+              details="This client's reports go here, alongside the PDC and department-head channels set in Settings. In Slack: channel details → Channel ID at the bottom."
             />
             {detailsError && (
               <s-banner tone="critical">
@@ -265,7 +282,7 @@ export default function StoreSettings() {
               <s-date-field
                 label="Expires"
                 name="expiresAt"
-                defaultValue={expiresDefault}
+                value={expiresDefault}
                 details="The expiry date Shopify Admin showed for this signature."
               />
               <s-stack direction="inline" gap="base">
