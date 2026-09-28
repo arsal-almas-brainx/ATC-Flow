@@ -11,10 +11,12 @@ export default function App() {
           rel="stylesheet"
           href="https://cdn.shopify.com/static/fonts/inter/v4/styles.css"
         />
+        {/* Polaris web components (s-page, s-button, …), standalone — no App Bridge. */}
+        <script src="https://cdn.shopify.com/shopifycloud/polaris.js" />
         <Meta />
         <Links />
       </head>
-      <body>
+      <body style={{ margin: 0, background: "#f1f1f1" }}>
         <Outlet />
         <ScrollRestoration />
         <Scripts />

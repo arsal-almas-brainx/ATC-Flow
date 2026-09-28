@@ -57,7 +57,7 @@ const STEP_PLAN: Array<[key: string, title: string, layer: RunStep["layer"]]> = 
 export function blankRun(id: string, opts: RunOptions): FlowRun {
   return {
     id,
-    shop: opts.shop,
+    storeId: opts.storeId,
     productUrl: opts.productUrl,
     quantity: opts.quantity ?? 1,
     status: "queued",
@@ -91,11 +91,11 @@ export async function runCheck(
   if (!webBotAuth) {
     run.status = "skipped";
     run.error =
-      "No Web Bot Auth signature is configured for this shop. Create one in Shopify Admin → Online " +
-      "Store → Preferences → Crawler access, then save it under Settings.";
+      "No Web Bot Auth signature is configured for this store. Create one in the store's Shopify Admin → " +
+      "Online Store → Preferences → Crawler access, then save it in this store's settings.";
     for (const s of run.steps) {
       s.status = "skip";
-      s.detail = "Not run — Web Bot Auth is not configured for this shop.";
+      s.detail = "Not run — Web Bot Auth is not configured for this store.";
     }
     run.finishedAt = Date.now();
     onUpdate(run);
@@ -153,7 +153,7 @@ export async function runCheck(
           s.durationMs = Date.now() - t0;
           try {
             const buf = await page.screenshot({ type: "jpeg", quality: 70, timeout: 5000 });
-            s.screenshotPath = await saveScreenshot(opts.shop, run.id, key, buf);
+            s.screenshotPath = await saveScreenshot(opts.storeId, run.id, key, buf);
           } catch {
             // Best-effort only — a screenshot failure must never fail the step itself.
           }

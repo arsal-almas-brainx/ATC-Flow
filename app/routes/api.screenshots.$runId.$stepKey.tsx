@@ -1,17 +1,17 @@
 import { readFile } from "node:fs/promises";
 import type { LoaderFunctionArgs } from "react-router";
-import { authenticate } from "../shopify.server";
+import { requireAdmin } from "../auth.server";
 import { getRun } from "../atc/store.server";
 
 /**
  * Serves one step's screenshot. Never builds a filesystem path from the URL
- * itself — always resolves through the already shop-authorized run's own
+ * itself — always resolves through the run's own
  * `steps` array, so there is no path-traversal surface.
  */
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  await requireAdmin(request);
   const run = await getRun(String(params.runId));
-  if (!run || run.shop !== session.shop) {
+  if (!run) {
     throw new Response("Not found", { status: 404 });
   }
 

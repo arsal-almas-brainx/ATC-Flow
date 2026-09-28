@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { RunStep } from "../atc/types";
 import { StepStatusBadge } from "./StatusBadge";
-import { useAuthenticatedImage } from "./useAuthenticatedImage";
 
 const INLINE_DETAIL_LIMIT = 80;
 
@@ -18,7 +17,6 @@ export function StepRow({
   const detail = step.detail ?? "";
   const long = detail.length > INLINE_DETAIL_LIMIT || detail.includes("\n");
   const screenshotUrl = step.screenshotPath ? `/api/screenshots/${runId}/${step.key}` : null;
-  const thumbnailSrc = useAuthenticatedImage(screenshotUrl);
 
   return (
     <s-stack direction="block" gap="small-200">
@@ -30,9 +28,9 @@ export function StepRow({
         {step.durationMs != null && <s-text color="subdued">{step.durationMs}ms</s-text>}
       </s-stack>
 
-      {screenshotUrl && thumbnailSrc && (
+      {screenshotUrl && (
         <s-clickable onClick={() => onViewScreenshot?.(screenshotUrl, step.title)}>
-          <s-thumbnail src={thumbnailSrc} alt={`Screenshot: ${step.title}`} size="large" />
+          <s-thumbnail src={screenshotUrl} alt={`Screenshot: ${step.title}`} size="large" />
         </s-clickable>
       )}
 

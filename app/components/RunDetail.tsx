@@ -1,27 +1,16 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { FlowRun } from "../atc/types";
 import { LAYERS } from "../atc/layers";
 import { StatusBadge } from "./StatusBadge";
 import { RunProgressBar } from "./RunProgressBar";
 import { LayerCard } from "./LayerCard";
-import { useAuthenticatedImage } from "./useAuthenticatedImage";
-
-const SCREENSHOT_MODAL_ID = "atc-screenshot-modal";
 
 export function RunDetail({ run }: { run: FlowRun }) {
   const [screenshot, setScreenshot] = useState<{ url: string; title: string } | null>(null);
-  const modalSrc = useAuthenticatedImage(screenshot?.url ?? null);
   const warnings = run.steps.filter((s) => s.status === "warn").length;
   const inFlight = run.status === "queued" || run.status === "running";
 
-  const viewScreenshot = (url: string, title: string) => {
-    setScreenshot({ url, title });
-    // App Bridge's declarative modal API; if it isn't wired up for any reason
-    // the modal still renders inline below, just without the open animation.
-    (window as { shopify?: { modal?: { show?: (id: string) => void } } }).shopify?.modal?.show?.(
-      SCREENSHOT_MODAL_ID,
-    );
-  };
+  const viewScreenshot = (url: string, title: string) => setScreenshot({ url, title });
 
   const heading =
     run.status === "skipped"
@@ -109,11 +98,9 @@ export function RunDetail({ run }: { run: FlowRun }) {
         )}
       </s-stack>
 
-      <s-modal id={SCREENSHOT_MODAL_ID} heading={screenshot?.title ?? "Screenshot"}>
-        {screenshot && modalSrc && (
-          <img src={modalSrc} alt={screenshot.title} style={{ maxWidth: "100%", display: "block" }} />
-        )}
-      </s-modal>
+      {screenshot && (
+        <ScreenshotLightbox {...screenshot} onClose={() => setScreenshot(null)} />
+      )}
     </s-section>
   );
 }
@@ -129,5 +116,43 @@ function StatTile({ label, icon, children }: { label: string; icon?: ReactNode; 
         {children}
       </s-stack>
     </s-box>
+  );
+}
+
+function ScreenshotLightbox({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <button
+      type="button"
+      aria-label={`Close screenshot: ${title}`}
+      onClick={onClose}
+      style={{
+        border: 0,
+        font: "inherit",
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        background: "rgba(0,0,0,0.75)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        padding: 16,
+        cursor: "zoom-out",
+      }}
+    >
+      <div style={{ color: "#fff", fontWeight: 600 }}>{title}</div>
+      <img
+        src={url}
+        alt={title}
+        style={{ maxWidth: "100%", maxHeight: "85vh", display: "block", borderRadius: 8 }}
+      />
+    </button>
   );
 }

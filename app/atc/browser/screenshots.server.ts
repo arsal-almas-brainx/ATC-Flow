@@ -10,12 +10,12 @@ const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || path.join(process.cwd(), "s
 
 /** Saves one step's screenshot (jpeg), returning the path it was written to. */
 export async function saveScreenshot(
-  shop: string,
+  storeId: string,
   runId: string,
   stepKey: string,
   buf: Buffer,
 ): Promise<string> {
-  const dir = path.join(SCREENSHOT_DIR, shop);
+  const dir = path.join(SCREENSHOT_DIR, storeId);
   await mkdir(dir, { recursive: true });
   const file = path.join(dir, `${runId}-${stepKey}.jpg`);
   await writeFile(file, buf);

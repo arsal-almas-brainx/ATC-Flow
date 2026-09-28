@@ -1,4 +1,4 @@
-# Production image for Fly.io (see README Part C).
+# Production image for Fly.io (see README "Deploy to Fly.io").
 #
 # Debian slim rather than Alpine: Prisma's query engine needs OpenSSL, and the
 # glibc build is the one Prisma detects without extra binaryTargets config.

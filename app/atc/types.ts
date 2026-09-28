@@ -27,7 +27,7 @@ export type RunStatus = "queued" | "running" | "passed" | "failed" | "skipped";
 
 export type FlowRun = {
   id: string;
-  shop: string;
+  storeId: string;
   productUrl: string;
   quantity: number;
   status: RunStatus;
@@ -40,8 +40,8 @@ export type FlowRun = {
 };
 
 export type RunOptions = {
-  /** The *.myshopify.com domain — used to scope stored settings and the run record. */
-  shop: string;
+  /** The Store row this run belongs to. */
+  storeId: string;
   /** Live storefront product URL the real browser navigates to. */
   productUrl: string;
   quantity?: number;

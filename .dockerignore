@@ -5,8 +5,6 @@ build
 .git
 .github
 .logs
-.shopify
-.shopify.lock
 
 # Local database — production uses the Fly volume at /data.
 prisma/dev.sqlite

@@ -1,6 +1,6 @@
-# ATC Flow App
+# ATC Flow
 
-A Shopify embedded admin app that tests your store's **add-to-cart → checkout** flow the way a QA
+A standalone super admin that tests client stores' **add-to-cart → checkout** flow the way a QA
 person would: with a real, headless Chromium browser doing exactly what a real visitor does. Press
 **Run check** and it loads your homepage and product page, searches for the product, clicks the
 real Add-to-cart button, looks at the cart, changes its quantity, applies a discount code, clicks
@@ -53,372 +53,66 @@ failure, since a blocked checker is not proof the store is broken.
 
 ---
 
+## Run it locally
+
+```bash
+npm install
+cp .env.example .env        # then set ADMIN_PASSWORD and SESSION_SECRET
+npm run dev                 # http://localhost:3000
+```
+
+`npm run dev` creates/migrates the local SQLite database (`prisma/dev.sqlite`) and loads `.env`.
+Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared password for the team.
+
+## Using it
+
+- **Stores** (`/app`) — every client store, its Web Bot Auth status and its last check. Add a store
+  with its name, storefront URL and one or more product URLs.
+- **A store's page** — **Run check** tests the first saved product. Click **Test a different
+  product, or set advanced options** to pick another saved product, paste any product URL on the
+  store, or change the quantity or discount code for this one run. **Recent checks** (right
+  sidebar) re-opens any past run.
+- **A store's Settings**
+  - *Store details* — name, URL, product URLs, and a discount code applied on every check.
+  - *Web Bot Auth* — the signature that gets the browser past Cloudflare, created in that store's
+    Shopify Admin → Online Store → Preferences → Crawler access. Shows **Not configured / Active /
+    Expires in N days / Expired**. There is no API to create or renew one, so the badge is the only
+    warning you get before checks start skipping.
+  - *Storefront password* — only while the store is password protected. Never sent back to the
+    browser — only whether one is stored.
+  - *Delete store* — removes it with all of its check history and screenshots.
+
 ## Checking from the terminal
 
-The same engine runs from the command line, so it works as a cron or CI smoke test:
+The same engine runs from the command line. The URL must be on a store already added in the super
+admin; its saved password and Web Bot Auth signature are used:
 
 ```bash
 npm run atc:check -- https://your-store.com/products/some-product
 npm run atc:check -- https://your-store.com/products/x --qty 2
 npm run atc:check -- https://your-store.com/products/x --discount SAVE10
+npm run atc:check -- https://your-store.com/products/x \
+  --wba-signature '...' --wba-signature-input '...' --wba-expires 2026-12-01 --save
 ```
 
 It exits `0` when the flow is healthy and `1` when it is broken (including when the run is skipped
-for having no Web Bot Auth signature configured). It reads the app's stored session only to work
-out which shop a custom domain belongs to — no Admin or Storefront API call is ever made by a
-check itself.
+for having no Web Bot Auth signature). `--save` stores the given signature/password on the store.
 
-**Save a Web Bot Auth signature once with `--save`** and every later run — CLI *and* app UI —
-reuses it:
+## Deploy to Fly.io
 
-```bash
-npm run atc:check -- https://your-store.com/products/x \
-  --wba-signature '...' --wba-signature-input '...' --wba-expires 2026-12-01 --save
-npm run atc:check -- https://your-store.com/products/x     # signature reused automatically
-```
-
-Without one, the whole run is skipped — nothing is tested until it is configured.
-
-**Password-protected store?** Pass the storefront password once with `--save` and every later run
-reuses it, unlocking the real password form before anything else runs:
-
-```bash
-npm run atc:check -- https://your-store.com/products/x --password 'yourpassword' --save
-npm run atc:check -- https://your-store.com/products/x     # password reused automatically
-```
-
----
-
-## Part A — Get it running and installed on your store
-
-You need: a **Shopify Partner account** (free) and admin access to the store.
-
-### 1. Install dependencies (already done if you ran the setup)
-
-```bash
-npm install
-```
-
-This also downloads a headless Chromium build — every check uses it.
-
-### 2. Create the database
-
-```bash
-npm run setup
-```
-
-This creates `prisma/dev.sqlite` with the session + run-history tables.
-
-### 3. Create the app and link this folder to it
-
-```bash
-npm run config:link
-```
-
-The Shopify CLI walks you through it:
-
-1. **Log in to Shopify** — it opens your browser, click *Confirm*.
-2. **Pick your organization**.
-3. **"Create this app on Shopify?"** → **Yes, create it as a new app**.
-4. **App name** → `ATC Flow App` (or anything).
-
-This creates the app in your dev dashboard and writes the real `client_id` into
-`shopify.app.toml`. You do **not** need to create anything by hand in the dashboard.
-
-### 4. Start it
-
-```bash
-npm run dev
-```
-
-One terminal, nothing else to start. This runs `shopify app dev --config dev --use-localhost`:
-Admin loads the app straight from `https://localhost:3458` over a trusted local certificate, with
-**no tunnel at all**. The first run installs a local certificate authority via `mkcert` and may ask
-for your macOS password — that's expected, and it only happens once.
-
-It reads [shopify.app.dev.toml](shopify.app.dev.toml), a dev-only config for the same app. Two
-reasons it exists:
-
-1. Shopify's API **rejects a localhost webhook URI**, and one bad URI fails the entire dev preview
-   with `Invalid value: "https://localhost:3458/webhooks/app/uninstalled" for: "uri"`. The dev
-   config declares no subscriptions, so there is nothing to reject.
-2. `npm run dev` rewrites `application_url` in whichever config it uses. Pointing it at the dev
-   config means your production [shopify.app.toml](shopify.app.toml) is no longer clobbered every
-   time you develop.
-
-`npm run deploy` still uses `shopify.app.toml`, so production keeps its real URL and its webhooks.
-
-No tunnel is the deliberate default here. Tunnels are the single most fragile part of Shopify local
-dev, and on a slow or restricted network they fail in ways that look like bugs in your app (see
-**Troubleshooting**). Removing them removes that whole class of problem.
-
-The one trade-off: **Shopify cannot deliver webhooks to `localhost`.** The `app/uninstalled` and
-`app/scopes_update` handlers won't fire while you develop this way. Everything else — the embedded
-UI, OAuth, the ATC runs themselves — works normally. If you need to exercise a webhook, use
-`npm run dev:tunnel` for that session, or trigger one directly:
-
-```bash
-npm run shopify -- app webhook trigger
-```
-
-Pick the store you want to test when prompted. The CLI writes `.env` and prints a preview URL.
-
-<details>
-<summary>Using a tunnel instead</summary>
-
-```bash
-npm run dev:tunnel          # Shopify's built-in Cloudflare tunnel
-```
-
-Or your own ngrok tunnel, if you want a fixed public URL. Start ngrok in its own terminal first:
-
-```bash
-ngrok http 3000
-```
-
-Copy the `https://…ngrok-free.dev` URL it prints, then in a second terminal:
-
-```bash
-npm run dev:tunnel -- --tunnel-url https://your-subdomain.ngrok-free.dev:3000
-```
-
-The `:3000` on the end is the **local** port the tunnel forwards to, not part of the public URL —
-the CLI requires that format.
-
-</details>
-
-When it finishes you'll see something like:
-
-```
-Preview URL: https://admin.shopify.com/store/your-store/apps/…
-Press p to open the app preview
-```
-
-### 5. Install it on the store
-
-Press **`p`** in that terminal. Your browser opens the install screen → click **Install app** (it
-asks for product read access, used only to populate the product picker dropdown — nothing in the
-check engine itself calls the Admin API).
-
-The app now appears in your store's Shopify Admin under **Apps → ATC Flow App**.
-
-### 6. Configure Web Bot Auth and, if needed, the storefront password
-
-In the app's **Settings** page:
-
-- Create a signature in Shopify Admin → Online Store → Preferences → Crawler access, then paste
-  its **Signature** and **Signature-Input** values (plus the expiry date shown there) into the Web
-  Bot Auth section and save. Nothing runs until this is configured.
-- If the storefront is password protected, enter the password and click **Save password**. The
-  browser unlocks it automatically on every run.
-
-### 7. Run a check
-
-Click **Run check** — it auto-picks a recently active, in-stock product, so no other input is
-required. Results stream in live, grouped by layer.
-
-Four outcomes are possible per check:
-
-- **pass** — the check ran and the store is fine.
-- **warn** — the check ran and found something worth your attention, but it is not proof the flow
-  is broken (e.g. a discount code was accepted but didn't change the total — expected for
-  free-shipping-only codes).
-- **skip** — the check could not run at all: no Web Bot Auth signature is configured, Cloudflare
-  blocked the browser anyway, no discount code was supplied, or an earlier, genuinely-prerequisite
-  check already failed.
-- **fail** — a real, observed problem: a button that doesn't work, a page that doesn't load, a
-  discount code that doesn't apply.
-
-Only `fail` marks the run broken. A check that couldn't run at all because a *different*, unrelated
-check (say, the cart's own quantity stepper) failed still runs on its own — one broken capability
-doesn't hide the rest of the report.
-
-> ⚠️ **Keep `npm run dev` running.** The app's code runs on *your machine* — Shopify Admin just
-> displays it in an iframe. Close the terminal and the app page goes blank. This is how every
-> Shopify app works; there is no way to run it "inside" Shopify. To use the app with no terminal
-> open, deploy it — see **Part C**.
-
----
-
-## Part B — Using it
-
-- **Run check** — needs no input in the common case; it tests whatever product the loader
-  auto-picked. Click **Test a different product, or set advanced options** to override the product,
-  quantity, a per-run storefront password, or a discount code to test.
-- **Settings → Web Bot Auth** — the signature that gets the browser past Cloudflare. Shows
-  **Not configured / Active / Expires in N days / Expired**, with a banner only when it actually
-  needs attention. There is no API to create or renew one, so a reminder here is the only warning
-  you'll get before checks silently start skipping again.
-- **Settings → Storefront password** — if the store is password protected (Online Store →
-  Preferences → Password protection), save it once and every run unlocks the storefront
-  automatically through the real password form. The password is never sent back to the browser —
-  only whether one is stored.
-- **Recent checks** (right sidebar) — click any past run to re-open its full result.
-
----
-
-## Part C — Deploy it (no terminal required)
-
-An embedded Shopify app's UI is served by **your** server — Shopify Admin only frames it. So
-"installed" is not enough on its own: for the app to open with no terminal running, something has
-to be serving it around the clock. That is what deploying means here.
-
-This app deploys to **[Fly.io](https://fly.io)**. The config is already in the repo
-([fly.toml](fly.toml), [Dockerfile](Dockerfile)) and the machine sleeps when idle and wakes on the
-first request, so an app only you use costs cents a month. You need the `flyctl` CLI
-(`brew install flyctl`) and a Fly account with a card on file. No Docker install required — Fly
-builds the image on its own remote builder.
-
-### 1. Log in and create the app
+The config is already in the repo ([fly.toml](fly.toml), [Dockerfile](Dockerfile)). You need
+`flyctl` (`brew install flyctl`) and a Fly account. Fly builds the image remotely — no local Docker.
 
 ```bash
 fly auth login
-fly apps create atc-flow-app
-```
-
-If that name is taken, pick another — then change **both** `app` and `SHOPIFY_APP_URL` in
-[fly.toml](fly.toml), and `application_url` + `redirect_urls` in
-[shopify.app.toml](shopify.app.toml), to match the new `https://<name>.fly.dev`.
-
-### 2. Create the database volume
-
-SQLite has to live on a persistent disk. Without it, every redeploy wipes the session table and
-the store has to reinstall the app.
-
-```bash
-fly volumes create data --size 1 --region bom --app atc-flow-app --yes
-```
-
-`bom` is Mumbai. Use whatever region is closest to you — `fly platform regions` lists them — and
-keep it the same as `primary_region` in [fly.toml](fly.toml).
-
-### 3. Set the API secret
-
-Everything else lives in `fly.toml`; only the client secret is a secret.
-
-```bash
-npm run env -- show          # prints SHOPIFY_API_SECRET
-fly secrets set SHOPIFY_API_SECRET=<paste-it-here> --app atc-flow-app
-```
-
-### 4. Deploy
-
-```bash
+fly apps create atc-flow-app                 # rename in fly.toml if the name is taken
+fly volumes create data --size 1 --region bom --app atc-flow-app
+fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=$(openssl rand -hex 32) --app atc-flow-app
 fly deploy
 ```
 
-Confirm it is serving:
-
-```bash
-curl -o /dev/null -w '%{http_code}\n' https://atc-flow-app.fly.dev/      # want 200 or 302
-```
-
-### 5. Push the URL to Shopify
-
-[shopify.app.toml](shopify.app.toml) already points at `https://atc-flow-app.fly.dev`. Send it:
-
-```bash
-npm run deploy
-```
-
-### 6. Install on the store — once
-
-Dev dashboard → your app → **Distribution** → **Custom distribution** → enter the store's
-`.myshopify.com` domain → open the install link → **Install app**.
-
-Now close every terminal. The app is at **Apps → ATC Flow App** in Shopify Admin, whenever you
-want it.
-
-### Shipping a code change
-
-```bash
-fly deploy                   # code
-npm run deploy               # only if you changed shopify.app.toml (scopes, webhooks, URLs)
-```
-
-### Managing it
-
-```bash
-fly logs --app atc-flow-app
-fly status --app atc-flow-app
-fly ssh console --app atc-flow-app          # shell in; the database is at /data/prod.sqlite
-fly apps destroy atc-flow-app               # tear it all down
-```
-
-> `npm run dev` is unaffected by any of this — it uses [shopify.app.dev.toml](shopify.app.dev.toml)
-> and localhost. But note that `automatically_update_urls_on_dev` is now **false** in
-> [shopify.app.toml](shopify.app.toml), so `npm run dev:tunnel` will no longer silently repoint the
-> deployed app at a temporary tunnel. If you do need a tunnel session, flip it to `true`, and run
-> `npm run deploy` afterwards to restore the Fly URL.
-
----
-
-## Part D — Alternative: run it on this Mac, free
-
-If you would rather not pay for hosting, the app can instead run as two macOS launch agents that
-start on boot and keep running with no terminal open. $0, no credit card. The limitation is that
-the Mac must be powered on and online for the app to work at all — a closed lid means a blank app
-page in Admin.
-
-### 1. Claim your free ngrok static domain
-
-Go to <https://dashboard.ngrok.com/domains> → **Create domain**. The free plan includes one
-static domain, e.g. `flashily-dizzy-maturely.ngrok-free.dev`.
-
-This step cannot be skipped: without a claimed static domain ngrok hands out a new random URL on
-every restart, and ngrok rejects made-up subdomains with `ERR_NGROK_313`.
-
-### 2. Install the services
-
-Stop `npm run dev` and any hand-started `ngrok` first — the installer refuses to run while
-something else holds port 3000, and tells you which process it is.
-
-```bash
-npm run service:install -- flashily-dizzy-maturely.ngrok-free.dev
-```
-
-That one command does everything: reads your Shopify credentials, writes `.env.production`
-(chmod 600), repoints `application_url` and `redirect_urls` in `shopify.app.toml` at your domain,
-sets `automatically_update_urls_on_dev = false`, builds the app, then writes and loads two launch
-agents:
-
-| Service | What it does |
-|---|---|
-| `com.atcflow.server` | serves the built app on port 3000 |
-| `com.atcflow.ngrok` | exposes port 3000 at your static domain |
-
-Both use `KeepAlive`, so macOS restarts them if they crash or the Mac reboots.
-
-> This rewrites `application_url` and `redirect_urls` in [shopify.app.toml](shopify.app.toml) to
-> your ngrok domain, so it is one or the other — not both. To go back to Fly, restore those two
-> values to `https://atc-flow-app.fly.dev`, run `npm run service:uninstall`, then `npm run deploy`.
-
-### 3. Push the URL to Shopify and install on the store
-
-```bash
-npm run deploy
-```
-
-Then dev dashboard → your app → **Distribution** → **Custom distribution** → enter the store's
-`.myshopify.com` domain → open the install link → **Install app**.
-
-### 4. Confirm
-
-Close every terminal. Open the store admin → **Apps → ATC Flow App**.
-
-### Managing the services
-
-```bash
-npm run service:logs        # tail the server log
-npm run service:uninstall   # stop and remove both services
-launchctl list | grep atcflow
-```
-
-Logs are in `.logs/`. Re-run `service:install` after code changes to rebuild and reload.
-
-> If your ngrok account does not offer a free static domain, **Tailscale Funnel** is a free
-> alternative that also gives a permanent HTTPS hostname — swap the ngrok launch agent for
-> `tailscale funnel 3000`.
+The SQLite database and screenshots live on the `data` volume, so they survive redeploys.
+Migrations run on every start (`npm run docker-start`).
 
 ---
 
@@ -474,8 +168,8 @@ is attempted, so transport flags like `TUNNEL_TRANSPORT_PROTOCOL=http2` cannot h
 `npm run dev`, which needs no tunnel.
 
 **"Not configured yet" / the run is skipped**
-No Web Bot Auth signature is configured for this shop, or the stored one has expired. Go to
-**Settings**, create a signature in Shopify Admin → Online Store → Preferences → Crawler access,
+No Web Bot Auth signature is configured for this store, or the stored one has expired. Open the
+store's **Settings**, create a signature in the store's Shopify Admin → Online Store → Preferences → Crawler access,
 and save its values. There is no API to create or renew one — it has a hard 3-month maximum
 lifetime, so this will happen again; the Settings page shows a countdown once it's within 14 days
 of expiring.
@@ -529,7 +223,7 @@ in progress — this app runs on a single machine, so only one browser session i
 time), released when the run ends or its hard time limit is hit.
 
 `app/atc/browser/web-bot-auth.server.ts` attaches the Web Bot Auth signature to every request the
-browser makes to the shop's own origin (and, best-effort, to Shopify's checkout host), scoped via
+browser makes to the store's own origin (and, best-effort, to Shopify's checkout host), scoped via
 `context.route()` rather than applied globally, so third-party requests the theme's own JS fires
 (analytics, payment SDKs) never see the credential.
 
@@ -554,15 +248,18 @@ app/atc/checker.server.ts   the 9 checks — the whole engine, one continuous br
 app/atc/checks/             one file per journey stage: storefront, search, cart, checkout, collection
 app/atc/browser/            Chromium lifecycle, Web Bot Auth headers, challenge detection, screenshots
 app/atc/store.server.ts     starts runs, keeps live progress in memory, persists to SQLite
-app/atc/settings.server.ts  stores the storefront password per shop
-app/atc/web-bot-auth.server.ts   stores/resolves the Web Bot Auth signature per shop
+app/atc/stores.server.ts    store config: CRUD, validation, building a run's options
+app/atc/web-bot-auth.server.ts   resolves a store's Web Bot Auth signature and its expiry status
 app/atc/types.ts            RunStep / FlowRun / RunOptions shapes
 app/atc/layers.ts           display metadata for the 4 layers (storefront/discovery/cart/checkout)
-app/routes/app._index.tsx   the dashboard: Run button, live results by layer, recent checks
-app/routes/app.settings.tsx storefront password + Web Bot Auth settings
+app/auth.server.ts          admin password + signed session cookie
+app/routes/login.tsx        sign in
+app/routes/app._index.tsx   all stores + add a store
+app/routes/app.stores.$id._index.tsx    a store's dashboard: Run button, live results, recent checks
+app/routes/app.stores.$id.settings.tsx  a store's details, storefront password, Web Bot Auth
 app/routes/api.runs.$id.tsx polled for live progress
 scripts/atc-check.mjs       the same engine from the terminal
-prisma/schema.prisma        Session (Shopify) + ShopSetting + FlowRun (history)
+prisma/schema.prisma        Store (config) + FlowRun (history)
 ```
 
 `checker.server.ts` is imported by both the app and the CLI script. The CLI loads it as a raw `.ts`

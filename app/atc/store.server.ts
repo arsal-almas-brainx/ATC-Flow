@@ -51,9 +51,9 @@ export async function getRun(id: string): Promise<FlowRun | null> {
   return row ? markStale(rowToRun(row)) : null;
 }
 
-export async function listRuns(shop: string, take = 20): Promise<FlowRun[]> {
+export async function listRuns(storeId: string, take = 20): Promise<FlowRun[]> {
   const rows = await prisma.flowRun.findMany({
-    where: { shop },
+    where: { storeId },
     orderBy: { startedAt: "desc" },
     take,
   });
@@ -73,7 +73,7 @@ function markStale(run: FlowRun): FlowRun {
 
 async function persist(run: FlowRun) {
   const data = {
-    shop: run.shop,
+    storeId: run.storeId,
     productUrl: run.productUrl,
     quantity: run.quantity,
     status: run.status,
@@ -100,7 +100,7 @@ type FlowRunRow = Awaited<ReturnType<typeof prisma.flowRun.findUniqueOrThrow>>;
 function rowToRun(row: FlowRunRow): FlowRun {
   return {
     id: row.id,
-    shop: row.shop,
+    storeId: row.storeId,
     productUrl: row.productUrl,
     quantity: row.quantity,
     status: row.status as FlowRun["status"],

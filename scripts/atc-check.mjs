@@ -8,13 +8,13 @@
  *   npm run atc:check -- https://your-store.com/products/x --wba-signature ... \
  *                              --wba-signature-input ... --wba-expires 2026-12-01 --save
  *
- * It reads the app's stored Admin session only to resolve which shop a
- * custom domain belongs to — no Admin or Storefront API call is ever made by
- * the check itself. Every check is a real, Web-Bot-Auth-authorized Chromium
- * browser doing what a QA person would do by hand: load the homepage and
- * product page, search, click the real Add-to-cart button, look at the
- * cart, change its quantity, apply a discount, click through to checkout,
- * and check the product is listed on a collection.
+ * The URL's origin must match a store added in the super admin — its saved
+ * password and Web Bot Auth signature are used. Every check is a real,
+ * Web-Bot-Auth-authorized Chromium browser doing what a QA person would do
+ * by hand: load the homepage and product page, search, click the real
+ * Add-to-cart button, look at the cart, change its quantity, apply a
+ * discount, click through to checkout, and check the product is listed on a
+ * collection.
  *
  * No order is ever placed; checkout is only ever reached, never completed.
  * Exits 0 when the flow is healthy and 1 when it is broken, so it also works
@@ -44,9 +44,9 @@ const flag = (name) => {
   return i === -1 ? undefined : argv[i + 1];
 };
 
-let host;
+let origin;
 try {
-  host = new URL(target).host;
+  origin = new URL(target).origin;
 } catch {
   console.error(`Not a valid URL: ${target}`);
   process.exit(2);
@@ -59,30 +59,17 @@ const db = new PrismaClient({
   datasourceUrl: process.env.DATABASE_URL || "file:dev.sqlite",
 });
 
-/**
- * The product URL may be on a custom domain while the app's stored session is
- * keyed by the *.myshopify.com domain — this is the only reason a session is
- * still resolved at all, purely to map the given URL to the shop identifier
- * that ShopSetting/FlowRun are scoped by.
- */
-async function resolveShop() {
-  const byHost = await db.session.findFirst({ where: { shop: host } });
-  if (byHost) return byHost.shop;
-  const all = await db.session.findMany();
-  if (all.length === 1) return all[0].shop;
-  throw new Error(
+const store = await db.store.findFirst({ where: { url: origin } });
+if (!store) {
+  const all = await db.store.findMany({ select: { url: true } });
+  console.error(
     all.length
-      ? `No stored session matches ${host}. Stored: ${all.map((s) => s.shop).join(", ")}`
-      : "No stored session yet. Run `npm run dev` and open the app in Shopify Admin once.",
+      ? `No store matches ${origin}. Stores: ${all.map((s) => s.url).join(", ")}`
+      : "No stores yet. Add one in the super admin first.",
   );
-}
-
-const shop = await resolveShop().catch((err) => {
-  console.error(err.message);
   process.exit(2);
-});
-
-const settings = await db.shopSetting.findUnique({ where: { shop } }).catch(() => null);
+}
+const settings = store;
 
 let password = flag("password");
 const wbaSignature = flag("wba-signature");
@@ -102,14 +89,14 @@ if (argv.includes("--save")) {
   if (wbaSignature !== undefined) data.webBotAuthSignature = wbaSignature || null;
   if (wbaSignatureInput !== undefined) data.webBotAuthSignatureInput = wbaSignatureInput || null;
   if (wbaExpires !== undefined) data.webBotAuthExpiresAt = wbaExpires ? new Date(wbaExpires) : null;
-  await db.shopSetting.upsert({ where: { shop }, create: { shop, ...data }, update: data });
+  await db.store.update({ where: { id: store.id }, data });
   if (password !== undefined) {
-    console.log(password ? `Saved the storefront password for ${shop}.` : "Cleared the stored password.");
+    console.log(password ? `Saved the storefront password for ${store.name}.` : "Cleared the stored password.");
   }
   if (wbaSignature !== undefined || wbaSignatureInput !== undefined) {
     console.log(
       wbaSignature || wbaSignatureInput
-        ? `Saved the Web Bot Auth signature for ${shop}.`
+        ? `Saved the Web Bot Auth signature for ${store.name}.`
         : "Cleared the stored Web Bot Auth signature.",
     );
   }
@@ -129,7 +116,7 @@ const webBotAuthConfigured =
   !(webBotAuthExpiresAt && webBotAuthExpiresAt.getTime() <= Date.now());
 
 const opts = {
-  shop,
+  storeId: store.id,
   productUrl: target,
   quantity: Math.max(1, Number(flag("qty") ?? 1) || 1),
   storefrontPassword: password,
@@ -155,7 +142,7 @@ const expiryNote = (() => {
 
 console.log(`\nATC flow check → ${target}`);
 console.log(
-  `shop ${shop} · quantity ${opts.quantity}` +
+  `store ${store.name} · quantity ${opts.quantity}` +
     `${password ? " · storefront password loaded" : ""}` +
     ` · web bot auth: ${webBotAuthConfigured ? `configured${expiryNote}` : "not configured — the run will be skipped"}\n`,
 );
