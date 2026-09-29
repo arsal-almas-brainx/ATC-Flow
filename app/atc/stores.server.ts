@@ -136,7 +136,9 @@ export function runOptionsFor(
   const webBotAuth = resolveWebBotAuthCredentials(store);
   return {
     storeId: store.id,
-    productUrl: overrides.productUrl || productUrlList(store)[0] || "",
+    storeUrl: store.url,
+    productUrl: overrides.productUrl || undefined,
+    productPool: productUrlList(store),
     quantity: overrides.quantity ?? 1,
     discountCode: overrides.discountCode || store.discountCode || undefined,
     searchQuery: store.searchQuery ?? undefined,

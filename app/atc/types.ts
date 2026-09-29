@@ -42,8 +42,15 @@ export type FlowRun = {
 export type RunOptions = {
   /** The Store row this run belongs to. */
   storeId: string;
-  /** Live storefront product URL the real browser navigates to. */
-  productUrl: string;
+  /** Storefront origin, e.g. https://example.com. */
+  storeUrl: string;
+  /**
+   * A specific product to test. When omitted, the run picks one itself — at
+   * random from `productPool` if given, otherwise from the store's best
+   * sellers (see checks/product-pick.server.ts).
+   */
+  productUrl?: string;
+  productPool?: string[];
   quantity?: number;
   /** Only needed while the storefront is password protected. */
   storefrontPassword?: string;

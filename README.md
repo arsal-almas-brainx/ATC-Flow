@@ -2,10 +2,10 @@
 
 A standalone super admin that tests client stores' **add-to-cart → checkout** flow the way a QA
 person would: with a real, headless Chromium browser doing exactly what a real visitor does. Press
-**Run check** and it loads your homepage and product page, searches for the product, uses the
+**Run check** and it loads your homepage, picks an in-stock product from the best sellers, loads its product page, searches for the product, uses the
 product page's quantity selector, clicks the real Add-to-cart button, looks at the cart, raises and
 lowers its quantity, applies a discount code, clicks
-through to checkout, and confirms the product is listed on a collection — ten checks, one
+through to checkout, and confirms the product is listed on a collection — eleven checks, one
 continuous browser session, one shopper's one visit.
 
 | Layer | What it proves |
@@ -69,9 +69,11 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
 
 - **Stores** (`/app`) — every client store, its Web Bot Auth status and its last check. Add a store
   with its name, storefront URL and one or more product URLs.
-- **A store's page** — **Run check** tests the first saved product. Click **Test a different
-  product, or set advanced options** to pick another saved product, paste any product URL on the
-  store, or change the quantity or discount code for this one run. **Recent checks** (right
+- **A store's page** — **Run check** picks the product itself: one of the store's saved product
+  URLs at random, or, with none saved, an in-stock product from the store's best sellers
+  (`/collections/all?sort_by=best-selling`, falling back to `/products.json`). Click **Test a
+  specific product, or set advanced options** to test one product URL, or change the quantity or
+  discount code, for this one run. **Recent checks** (right
   sidebar) re-opens any past run.
 - **A store's Settings**
   - *Store details* — name, URL, product URLs, a discount code applied on every check, an
@@ -96,6 +98,8 @@ The same engine runs from the command line. The URL must be on a store already a
 admin; its saved password and Web Bot Auth signature are used:
 
 ```bash
+npm run atc:check -- https://your-store.com                  # picks a product itself
+npm run atc:check -- https://your-store.com --auto           # ignore saved products
 npm run atc:check -- https://your-store.com/products/some-product
 npm run atc:check -- https://your-store.com/products/x --qty 2
 npm run atc:check -- https://your-store.com/products/x --discount SAVE10
@@ -236,7 +240,7 @@ browser makes to the store's own origin (and, best-effort, to Shopify's checkout
 `context.route()` rather than applied globally, so third-party requests the theme's own JS fires
 (analytics, payment SDKs) never see the credential.
 
-Each of the ten checks lives in its own file under `app/atc/checks/`, and reads the page the same
+Each of the eleven checks lives in its own file under `app/atc/checks/`, and reads the page the same
 way a person would: the add-to-cart form's own `id` field for which variant is selected, `<h1>` for
 the product title used to search, `/cart.js` (the same JSON the theme's own cart drawer reads) to
 confirm quantities and totals, a breadcrumb link for which collection to check. The first three
@@ -253,7 +257,7 @@ automated traffic regardless of authorization.
 ## Layout
 
 ```
-app/atc/checker.server.ts   the 10 checks — the whole engine, one continuous browser session
+app/atc/checker.server.ts   the 11 checks — the whole engine, one continuous browser session
 app/atc/checks/             one file per journey stage: storefront, search, cart, checkout, collection
 app/atc/browser/            Chromium lifecycle, Web Bot Auth headers, challenge detection, screenshots
 app/atc/store.server.ts     starts runs, keeps live progress in memory, persists to SQLite

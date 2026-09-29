@@ -118,10 +118,10 @@ export default function Stores() {
             <s-text-field label="Name" name="name" placeholder="Wonderfold EU" />
             <s-url-field label="Store URL" name="url" placeholder="https://example.com" />
             <s-text-area
-              label="Product URLs"
+              label="Product URLs (optional)"
               name="productUrls"
               rows={3}
-              details="One per line. The first one is used when you press Run check."
+              details="Optional, one per line. Each run tests one of these at random. Leave blank to pick an in-stock best seller automatically."
             />
             {result?.error && (
               <s-banner tone="critical">

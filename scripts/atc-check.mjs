@@ -1,6 +1,8 @@
 /**
  * ATC flow check from the terminal — the same engine the app UI runs.
  *
+ *   npm run atc:check -- https://your-store.com                 (picks a product itself)
+ *   npm run atc:check -- https://your-store.com --auto          (ignore saved products)
  *   npm run atc:check -- https://your-store.com/products/some-product
  *   npm run atc:check -- https://your-store.com/products/x --qty 2
  *   npm run atc:check -- https://your-store.com/products/x --password hunter2 --save
@@ -34,7 +36,7 @@ const target = argv.find((a) => !a.startsWith("--"));
 
 if (!target) {
   console.error(
-    "Usage: npm run atc:check -- <product-url> [--qty N] [--password P] [--discount CODE] [--search TERM] [--save]\n" +
+    "Usage: npm run atc:check -- <store-or-product-url> [--qty N] [--password P] [--discount CODE] [--search TERM] [--auto] [--save]\n" +
       "                              [--wba-signature S] [--wba-signature-input SI] [--wba-expires DATE]",
   );
   process.exit(2);
@@ -118,7 +120,13 @@ const webBotAuthConfigured =
 
 const opts = {
   storeId: store.id,
-  productUrl: target,
+  storeUrl: store.url,
+  // A store URL alone lets the run pick a product itself, as the app does.
+  productUrl: /\/products\/[^/]+/.test(new URL(target).pathname) ? target : undefined,
+  // --auto ignores the store's saved products and picks from its best sellers.
+  productPool: argv.includes("--auto")
+    ? []
+    : store.productUrls.split("\n").map((u) => u.trim()).filter(Boolean),
   quantity: Math.max(1, Number(flag("qty") ?? 1) || 1),
   storefrontPassword: password,
   discountCode: flag("discount") ?? store.discountCode ?? undefined,
@@ -183,6 +191,7 @@ const summary =
       : "FLOW BROKEN";
 console.log(`\n${summary}`);
 if (run.error) console.log(`Reason:   ${run.error}`);
+if (run.productUrl) console.log(`Product:  ${run.productUrl}`);
 if (run.cartTotal) console.log(`Total:    ${run.cartTotal}`);
 if (run.checkoutUrl) console.log(`Checkout: ${run.checkoutUrl}`);
 

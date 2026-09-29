@@ -88,6 +88,15 @@ export function RunDetail({ run }: { run: FlowRun }) {
           />
         ))}
 
+        {run.productUrl && (
+          <s-paragraph>
+            Product tested:{" "}
+            <s-link href={run.productUrl} target="_blank">
+              {new URL(run.productUrl).pathname}
+            </s-link>
+          </s-paragraph>
+        )}
+
         {run.checkoutUrl && (
           <s-paragraph>
             Checkout reached:{" "}

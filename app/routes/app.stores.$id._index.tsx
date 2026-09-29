@@ -41,13 +41,19 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const quantity = Math.max(1, Number(form.get("quantity") ?? 1) || 1);
   const discountCode = String(form.get("discountCode") ?? "").trim();
 
+  if (productUrl) {
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(productUrl);
+    } catch {
+      // handled below
+    }
+    if (!parsed || parsed.origin !== store.url || !/\/products\/[^/]+/.test(parsed.pathname)) {
+      return { error: `The product URL must be a product page on ${store.url} (…/products/<handle>).` };
+    }
+  }
+
   const opts = runOptionsFor(store, { productUrl, quantity, discountCode });
-  if (!opts.productUrl) {
-    return { error: "Add a product URL in this store's settings, or paste one below." };
-  }
-  if (!/^https?:\/\//i.test(opts.productUrl)) {
-    return { error: "The product URL must start with https://" };
-  }
 
   return { runId: startRun(opts).id };
 };
@@ -59,33 +65,16 @@ export default function StoreDashboard() {
   const revalidator = useRevalidator();
 
   const formRef = useRef<HTMLFormElement>(null);
-  const selectRef = useRef<HTMLElementTagNameMap["s-select"]>(null);
-  const urlRef = useRef<HTMLElementTagNameMap["s-text-field"]>(null);
 
   // A run opened from the history list. Cleared whenever a new run is started,
   // so the freshly started run always wins.
   const [pickedRunId, setPickedRunId] = useState<string | null>(null);
 
-  // With no saved product, there is nothing to collapse — a URL is required,
-  // so the options stay open from the start.
-  const [showAdvanced, setShowAdvanced] = useState(products.length === 0);
-  const autoProduct = products[0] ?? null;
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const startedRunId =
     starter.data && "runId" in starter.data ? starter.data.runId : null;
   const activeRunId = pickedRunId ?? startedRunId ?? null;
-
-  // Picking a product fills the URL field. Polaris fields are custom elements,
-  // so we listen for the native change event rather than React's onChange.
-  useEffect(() => {
-    const select = selectRef.current;
-    if (!select) return;
-    const sync = () => {
-      if (urlRef.current) urlRef.current.value = select.value ?? "";
-    };
-    select.addEventListener("change", sync);
-    return () => select.removeEventListener("change", sync);
-  }, []);
 
   const activeRun = poller.data?.run ?? null;
   const inFlight =
@@ -152,38 +141,26 @@ export default function StoreDashboard() {
           </s-banner>
         ) : null}
 
-        {autoProduct && (
-          <s-paragraph>
-            <s-text type="strong">Run check</s-text> tests{" "}
-            <s-text type="strong">{autoProduct}</s-text>.{" "}
-            <s-clickable onClick={() => setShowAdvanced((v) => !v)}>
-              <s-text color="subdued">
-                {showAdvanced ? "Hide advanced options" : "Test a different product, or set advanced options"}
-              </s-text>
-            </s-clickable>
-          </s-paragraph>
-        )}
+        <s-paragraph>
+          <s-text type="strong">Run check</s-text>{" "}
+          {products.length > 0
+            ? `tests one of this store's ${products.length} saved product${products.length > 1 ? "s" : ""}, picked at random.`
+            : "picks an in-stock product from the store's best sellers, like a shopper browsing."}{" "}
+          <s-clickable onClick={() => setShowAdvanced((v) => !v)}>
+            <s-text color="subdued">
+              {showAdvanced ? "Hide advanced options" : "Test a specific product, or set advanced options"}
+            </s-text>
+          </s-clickable>
+        </s-paragraph>
 
         <form ref={formRef} onSubmit={(e) => e.preventDefault()}>
           <s-stack direction="block" gap="base">
             <div hidden={!showAdvanced}>
               <s-stack direction="block" gap="base">
-                {products.length > 1 && (
-                  <s-select ref={selectRef} label="Saved product" name="product">
-                    {products.map((url) => (
-                      <s-option key={url} value={url}>
-                        {url}
-                      </s-option>
-                    ))}
-                  </s-select>
-                )}
-
                 <s-text-field
-                  ref={urlRef}
-                  label="Product URL"
+                  label="Product URL (optional)"
                   name="productUrl"
-                  value={products[0] ?? ""}
-                  details="Any live product URL on this store."
+                  details="Test this product for this run only. Leave blank to pick one automatically."
                 />
 
                 <s-stack direction="inline" gap="base">

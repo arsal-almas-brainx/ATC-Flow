@@ -18,6 +18,7 @@ import {
 import { checkCheckoutReached } from "./checks/checkout.server.ts";
 import { checkCollectionListing } from "./checks/collection.server.ts";
 import { saveScreenshot } from "./browser/screenshots.server.ts";
+import { pickProduct } from "./checks/product-pick.server.ts";
 
 /**
  * Real-browser storefront checker. No API calls of any kind — every check is
@@ -33,7 +34,7 @@ import { saveScreenshot } from "./browser/screenshots.server.ts";
  * for real would catch — a broken button, a page that silently fails to
  * load, checkout quietly breaking.
  *
- * `home-reachable`, `product-page` and `add-to-cart` are true prerequisites —
+ * `home-reachable`, `product-pick`, `product-page` and `add-to-cart` are true prerequisites —
  * each genuinely can't be judged without the one before it succeeding, so a
  * failure there aborts the run (matching a real shopper: if the site is
  * down, nothing else can be tried). Everything after that is judged
@@ -45,6 +46,7 @@ import { saveScreenshot } from "./browser/screenshots.server.ts";
 
 const STEP_PLAN: Array<[key: string, title: string, layer: RunStep["layer"]]> = [
   ["home-reachable", "Homepage loads for a real visitor", "storefront"],
+  ["product-pick", "Finds an in-stock product to test", "discovery"],
   ["product-page", "Product page loads with a buyable variant", "storefront"],
   ["search-results", "Search finds the product", "discovery"],
   ["product-quantity", "Product page quantity selector works", "cart"],
@@ -60,7 +62,7 @@ export function blankRun(id: string, opts: RunOptions): FlowRun {
   return {
     id,
     storeId: opts.storeId,
-    productUrl: opts.productUrl,
+    productUrl: opts.productUrl ?? "",
     quantity: opts.quantity ?? 1,
     status: "queued",
     startedAt: Date.now(),
@@ -79,8 +81,10 @@ export async function runCheck(
   onUpdate: (run: FlowRun) => void,
 ): Promise<FlowRun> {
   const quantity = opts.quantity ?? 1;
-  const origin = new URL(opts.productUrl).origin;
-  const handle = handleFromUrl(opts.productUrl);
+  const origin = new URL(opts.storeUrl).origin;
+  // Set by the product-pick step, before anything uses them.
+  let productUrl = "";
+  let handle = "";
 
   const webBotAuth =
     opts.webBotAuthSignature && opts.webBotAuthSignatureInput
@@ -89,7 +93,7 @@ export async function runCheck(
 
   // Nothing here can run at all without a Web Bot Auth signature — mark the
   // whole run skipped up front instead of repeating the same explanation on
-  // ten separate steps.
+  // eleven separate steps.
   if (!webBotAuth) {
     run.status = "skipped";
     run.error =
@@ -179,8 +183,18 @@ export async function runCheck(
 
       await step("home-reachable", () => checkHomeReachable(page, origin));
 
+      await step("product-pick", async () => {
+        const picked = opts.productUrl
+          ? { productUrl: opts.productUrl, detail: "Using the product chosen for this run" }
+          : await pickProduct(page, origin, opts.productPool ?? []);
+        productUrl = picked.productUrl;
+        handle = handleFromUrl(productUrl);
+        run.productUrl = productUrl;
+        return `${picked.detail}: /products/${handle}`;
+      });
+
       await step("product-page", async () => {
-        const result = await checkProductPage(page, opts.productUrl);
+        const result = await checkProductPage(page, productUrl);
         productTitle = result.title;
         variantId = result.variantId;
         return result.detail;
@@ -191,11 +205,11 @@ export async function runCheck(
       );
 
       await stepIsolated("product-quantity", () =>
-        checkProductQuantity(page, opts.productUrl, quantity),
+        checkProductQuantity(page, productUrl, quantity),
       );
 
       await step("add-to-cart", () =>
-        checkAddToCart(page, origin, opts.productUrl, variantId, productTitle || handle, quantity),
+        checkAddToCart(page, origin, productUrl, variantId, productTitle || handle, quantity),
       );
 
       await stepIsolated("cart-page", async () => {
@@ -218,7 +232,7 @@ export async function runCheck(
       });
 
       await stepIsolated("collection-listing", () =>
-        checkCollectionListing(page, origin, opts.productUrl, handle),
+        checkCollectionListing(page, origin, productUrl, handle),
       );
     });
 

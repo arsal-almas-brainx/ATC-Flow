@@ -157,11 +157,11 @@ export default function StoreSettings() {
             <s-text-field label="Name" name="name" value={store.name} />
             <s-url-field label="Store URL" name="url" value={store.url} />
             <s-text-area
-              label="Product URLs"
+              label="Product URLs (optional)"
               name="productUrls"
               rows={4}
               value={store.productUrls}
-              details="One per line. The first one is used when you press Run check."
+              details="Optional, one per line. Each run tests one of these at random. Leave blank to pick an in-stock best seller automatically."
             />
             <s-text-field
               label="Discount code (optional)"
