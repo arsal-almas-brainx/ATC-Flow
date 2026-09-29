@@ -4,6 +4,7 @@ import { LAYERS } from "../atc/layers";
 import { StatusBadge } from "./StatusBadge";
 import { RunProgressBar } from "./RunProgressBar";
 import { LayerCard } from "./LayerCard";
+import { SlackSend } from "./SlackSend";
 
 export function RunDetail({ run }: { run: FlowRun }) {
   const [screenshot, setScreenshot] = useState<{ url: string; title: string } | null>(null);
@@ -77,6 +78,8 @@ export function RunDetail({ run }: { run: FlowRun }) {
             </s-paragraph>
           </s-banner>
         )}
+
+        {!inFlight && <SlackSend key={run.id} runId={run.id} />}
 
         {LAYERS.map((layer) => (
           <LayerCard

@@ -220,9 +220,11 @@ export async function runCheck(
 
       await stepIsolated("cart-quantity-update", () => checkCartQuantityUpdate(page, origin));
 
-      await stepIsolated("cart-discount", () => {
+      await stepIsolated("cart-discount", async () => {
         if (!opts.discountCode) throw new Skip("No discount code supplied.");
-        return checkCartDiscount(page, origin, opts.discountCode);
+        const result = await checkCartDiscount(page, origin, opts.discountCode);
+        run.cartTotal = result.cartTotal;
+        return result.detail;
       });
 
       await stepIsolated("checkout-reached", async () => {

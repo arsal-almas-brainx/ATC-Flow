@@ -20,6 +20,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   await requireAdmin(request);
   const store = await loadStore(params.id);
   return {
+    openRunId: new URL(request.url).searchParams.get("run"),
     store: {
       id: store.id,
       name: store.name,
@@ -59,7 +60,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function StoreDashboard() {
-  const { store, products, webBotAuth, runs } = useLoaderData<typeof loader>();
+  const { store, products, webBotAuth, runs, openRunId } = useLoaderData<typeof loader>();
   const starter = useFetcher<typeof action>();
   const poller = useFetcher<{ run: FlowRun | null }>();
   const revalidator = useRevalidator();
@@ -68,7 +69,7 @@ export default function StoreDashboard() {
 
   // A run opened from the history list. Cleared whenever a new run is started,
   // so the freshly started run always wins.
-  const [pickedRunId, setPickedRunId] = useState<string | null>(null);
+  const [pickedRunId, setPickedRunId] = useState<string | null>(openRunId);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 

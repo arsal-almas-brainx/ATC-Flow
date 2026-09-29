@@ -2,7 +2,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { requireAdmin } from "../auth.server";
 import { getAppSettings, saveAppSettings } from "../atc/app-settings.server";
-import { parseSlackChannel, slackBotConfigured } from "../atc/slack.server";
+import { parseSlackChannel, slackBotConfigured, slackIdentity } from "../atc/slack.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await requireAdmin(request);
@@ -11,6 +11,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     pdcSlackChannel: settings.pdcSlackChannel ?? "",
     deptHeadSlackChannel: settings.deptHeadSlackChannel ?? "",
     botConfigured: slackBotConfigured(),
+    identity: slackBotConfigured() ? await slackIdentity() : null,
   };
 };
 
@@ -31,7 +32,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Settings() {
-  const { pdcSlackChannel, deptHeadSlackChannel, botConfigured } = useLoaderData<typeof loader>();
+  const { pdcSlackChannel, deptHeadSlackChannel, botConfigured, identity } =
+    useLoaderData<typeof loader>();
+  const connected = identity?.ok === true;
   const result = useActionData<typeof action>();
   const busy = useNavigation().state === "submitting";
 
@@ -45,10 +48,20 @@ export default function Settings() {
         <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="small-200" alignItems="center">
             <s-text>Slack bot:</s-text>
-            <s-badge tone={botConfigured ? "success" : "neutral"}>
-              {botConfigured ? "Connected" : "Not configured"}
+            <s-badge tone={connected ? "success" : botConfigured ? "critical" : "neutral"}>
+              {connected ? "Connected" : botConfigured ? "Not working" : "Not configured"}
             </s-badge>
+            {identity?.ok && (
+              <s-text color="subdued">
+                {identity.bot} in {identity.team}
+              </s-text>
+            )}
           </s-stack>
+          {identity && !identity.ok && (
+            <s-banner tone="critical">
+              <s-paragraph>Slack rejected the bot token: {identity.error}.</s-paragraph>
+            </s-banner>
+          )}
           {!botConfigured && (
             <s-paragraph>
               Reports are posted by a Slack bot. Set its token as the SLACK_BOT_TOKEN environment

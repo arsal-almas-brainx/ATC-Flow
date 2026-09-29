@@ -87,9 +87,16 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
     browser — only whether one is stored.
   - *Delete store* — removes it with all of its check history and screenshots.
 
+- **Send to Slack** — under every finished check. Tick the client, PDC and/or department-head
+  channel, optionally **Preview message**, then **Send report**. The report lists the result, the
+  product tested, the time (EST) and every failed or warning step with its reason; screenshots of
+  those steps are posted in a thread under it. Every send, successful or not, is recorded and
+  listed under **Sent**. Set `APP_URL` (e.g. `https://atc-flow-app.fly.dev`) to add a "view the
+  full report" link — it opens that run on the store's page.
 - **Settings** (`/app/settings`) — the PDC and department-head Slack channel IDs, which receive
   every store's report. Posting uses one Slack bot whose token is the `SLACK_BOT_TOKEN` environment
-  variable; invite the bot to each channel. In Slack, a channel's ID is at the bottom of its
+  variable (bot scopes `chat:write` and `files:write`); invite the bot to each channel. The page
+  shows which workspace and bot the token belongs to. In Slack, a channel's ID is at the bottom of its
   details panel.
 
 ## Checking from the terminal
@@ -120,7 +127,7 @@ The config is already in the repo ([fly.toml](fly.toml), [Dockerfile](Dockerfile
 fly auth login
 fly apps create atc-flow-app                 # rename in fly.toml if the name is taken
 fly volumes create data --size 1 --region bom --app atc-flow-app
-fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=$(openssl rand -hex 32) --app atc-flow-app
+fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=$(openssl rand -hex 32) SLACK_BOT_TOKEN=xoxb-... --app atc-flow-app
 fly deploy
 ```
 
@@ -263,7 +270,9 @@ app/atc/browser/            Chromium lifecycle, Web Bot Auth headers, challenge 
 app/atc/store.server.ts     starts runs, keeps live progress in memory, persists to SQLite
 app/atc/stores.server.ts    store config: CRUD, validation, building a run's options
 app/atc/app-settings.server.ts   global settings (PDC / department-head Slack channels)
-app/atc/slack.server.ts     Slack bot config + channel ID validation
+app/atc/slack.server.ts     Slack API: bot identity, posting, screenshot uploads, channel ID validation
+app/atc/report.server.ts    builds a run's Slack report and sends it; records every send (SlackDelivery)
+app/atc/checks/product-pick.server.ts   picks the product to test (saved pool or best sellers)
 app/atc/web-bot-auth.server.ts   resolves a store's Web Bot Auth signature and its expiry status
 app/atc/types.ts            RunStep / FlowRun / RunOptions shapes
 app/atc/layers.ts           display metadata for the 4 layers (storefront/discovery/cart/checkout)
@@ -274,8 +283,9 @@ app/routes/app.stores.$id._index.tsx    a store's dashboard: Run button, live re
 app/routes/app.stores.$id.settings.tsx  a store's details, storefront password, Web Bot Auth
 app/routes/app.settings.tsx global settings
 app/routes/api.runs.$id.tsx polled for live progress
+app/routes/api.runs.$id_.slack.tsx   Slack channels, preview and send for one run
 scripts/atc-check.mjs       the same engine from the terminal
-prisma/schema.prisma        Store (config) + AppSetting (global) + FlowRun (history)
+prisma/schema.prisma        Store (config) + AppSetting (global) + FlowRun (history) + SlackDelivery (audit)
 ```
 
 `checker.server.ts` is imported by both the app and the CLI script. The CLI loads it as a raw `.ts`

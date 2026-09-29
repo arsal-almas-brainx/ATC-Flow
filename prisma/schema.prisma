@@ -81,6 +81,24 @@ model FlowRun {
   checkoutUrl String?
   /// JSON-encoded RunStep[] — see app/atc/types.ts
   steps       String    @default("[]")
+  slackDeliveries SlackDelivery[]
 
   @@index([storeId, startedAt])
+}
+
+/// Audit trail: every attempt to post a run's report to a Slack channel.
+model SlackDelivery {
+  id       String   @id @default(cuid())
+  runId    String
+  run      FlowRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// client | pdc | dept-head
+  audience String
+  channel  String
+  ok       Boolean
+  error    String?
+  /// Slack message timestamp — identifies the posted message.
+  ts       String?
+  sentAt   DateTime @default(now())
+
+  @@index([runId])
 }

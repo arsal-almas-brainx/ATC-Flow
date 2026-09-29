@@ -15,8 +15,11 @@ primary_region = "bom"
   # redeploys. Losing it would lose every store's config and check history.
   DATABASE_URL = "file:/data/prod.sqlite"
 
-  # ADMIN_PASSWORD and SESSION_SECRET are secrets — set them with
-  # `fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=...`.
+  # Public URL, used for "view full report" links in Slack.
+  APP_URL = "https://atc-flow-app.fly.dev"
+
+  # ADMIN_PASSWORD, SESSION_SECRET and SLACK_BOT_TOKEN are secrets — set them
+  # with `fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=... SLACK_BOT_TOKEN=...`.
 
   # Failure screenshots from the browser-layer check, on the same persistent
   # volume as the database so they survive restarts.

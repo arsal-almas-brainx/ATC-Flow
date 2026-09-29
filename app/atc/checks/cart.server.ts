@@ -286,7 +286,11 @@ function assertStillOnCart(page: Page) {
  * is inconsistently present across themes (often shown only at checkout)
  * while the permalink route is a platform-level guarantee on every store.
  */
-export async function checkCartDiscount(page: Page, origin: string, code: string): Promise<string> {
+export async function checkCartDiscount(
+  page: Page,
+  origin: string,
+  code: string,
+): Promise<{ detail: string; cartTotal: string }> {
   const before = await readCart(page, origin);
   const beforeTotal = before?.total_price ?? 0;
   const currency = before?.currency ?? "USD";
@@ -326,7 +330,10 @@ export async function checkCartDiscount(page: Page, origin: string, code: string
     );
   }
 
-  return `"${code}" applied — total dropped from ${money(beforeTotal / 100, currency)} to ${money(afterTotal / 100, currency)}`;
+  return {
+    detail: `"${code}" applied — total dropped from ${money(beforeTotal / 100, currency)} to ${money(afterTotal / 100, currency)}`,
+    cartTotal: money(afterTotal / 100, currency),
+  };
 }
 
 function lineQuantity(cart: CartJson | null, variantId: string): number {
