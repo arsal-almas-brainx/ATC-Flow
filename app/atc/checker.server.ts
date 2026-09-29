@@ -9,6 +9,7 @@ import {
 } from "./checks/storefront.server.ts";
 import { checkSearchResults } from "./checks/search.server.ts";
 import {
+  checkProductQuantity,
   checkAddToCart,
   checkCartPage,
   checkCartQuantityUpdate,
@@ -46,9 +47,10 @@ const STEP_PLAN: Array<[key: string, title: string, layer: RunStep["layer"]]> = 
   ["home-reachable", "Homepage loads for a real visitor", "storefront"],
   ["product-page", "Product page loads with a buyable variant", "storefront"],
   ["search-results", "Search finds the product", "discovery"],
+  ["product-quantity", "Product page quantity selector works", "cart"],
   ["add-to-cart", "The real Add-to-cart button works", "cart"],
   ["cart-page", "Cart page shows the added item", "cart"],
-  ["cart-quantity-update", "Cart quantity can be changed", "cart"],
+  ["cart-quantity-update", "Cart quantity can be increased and decreased", "cart"],
   ["cart-discount", "Discount code applies correctly", "cart"],
   ["checkout-reached", "Checkout is reached", "checkout"],
   ["collection-listing", "Product is listed on a collection it links to", "discovery"],
@@ -87,7 +89,7 @@ export async function runCheck(
 
   // Nothing here can run at all without a Web Bot Auth signature — mark the
   // whole run skipped up front instead of repeating the same explanation on
-  // nine separate steps.
+  // ten separate steps.
   if (!webBotAuth) {
     run.status = "skipped";
     run.error =
@@ -186,6 +188,10 @@ export async function runCheck(
 
       await stepIsolated("search-results", () =>
         checkSearchResults(page, origin, productTitle, handle, opts.searchQuery),
+      );
+
+      await stepIsolated("product-quantity", () =>
+        checkProductQuantity(page, opts.productUrl, quantity),
       );
 
       await step("add-to-cart", () =>

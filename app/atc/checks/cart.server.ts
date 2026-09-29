@@ -3,6 +3,85 @@ import { Skip, Warn, money } from "../shared.server.ts";
 import { assertNoChallengeOnPage } from "../browser/challenge.server.ts";
 import { readCart, type CartJson } from "../browser/cart.server.ts";
 
+const PRODUCT_QTY_INPUT = 'input[name="quantity"]:visible';
+
+/**
+ * Tests the product page's quantity selector the way a shopper uses it —
+ * + then − — confirming the number shown actually changes each time, then
+ * leaves it set to `quantity` for the add-to-cart step. Falls back to typing
+ * into the box when the theme has no + / − buttons.
+ */
+export async function checkProductQuantity(
+  page: Page,
+  productUrl: string,
+  quantity: number,
+): Promise<string> {
+  await returnToProductPage(page, productUrl);
+
+  const input = page.locator(PRODUCT_QTY_INPUT).first();
+  if ((await input.count()) === 0) {
+    if (quantity > 1) {
+      throw new Error(
+        `This product page has no quantity selector, so a quantity of ${quantity} can't be chosen.`,
+      );
+    }
+    throw new Skip("This product page has no quantity selector — the theme adds one at a time.");
+  }
+
+  const plus = page.locator('button[name="plus"]:visible, [data-quantity-increase]:visible').first();
+  const minus = page.locator('button[name="minus"]:visible, [data-quantity-decrease]:visible').first();
+  const useButtons = (await plus.count()) > 0 && (await minus.count()) > 0;
+
+  const read = async () => Number(await input.inputValue()) || 0;
+  const waitFor = async (target: number) => {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if ((await read()) === target) return true;
+      await page.waitForTimeout(200);
+    }
+    return false;
+  };
+  const press = async (button: typeof plus, target: number, what: string) => {
+    await button.click({ timeout: 8000 });
+    if (!(await waitFor(target))) {
+      throw new Error(
+        `Pressing ${what} on the product page did not change the quantity (expected ${target}, shows ${await read()}).`,
+      );
+    }
+  };
+
+  const start = (await read()) || 1;
+  if (useButtons) {
+    await press(plus, start + 1, "+");
+    await press(minus, start, "−");
+    while ((await read()) < quantity) await press(plus, (await read()) + 1, "+");
+  } else {
+    await input.fill(String(quantity));
+    await input.press("Tab");
+    if (!(await waitFor(quantity))) {
+      throw new Error(`Typing ${quantity} into the product page's quantity box did not stick.`);
+    }
+  }
+
+  return useButtons
+    ? `Quantity ${start} → ${start + 1} → ${start} using + / −, then set to ${quantity}`
+    : `No + / − buttons; typed ${quantity} into the quantity box`;
+}
+
+/** The search step navigates away; a shopper who searched lands back here before buying. */
+async function returnToProductPage(page: Page, productUrl: string) {
+  if (new URL(page.url()).pathname === new URL(productUrl).pathname) return;
+  let response;
+  try {
+    response = await page.goto(productUrl, { waitUntil: "domcontentloaded", timeout: 20_000 });
+  } catch (err) {
+    throw new Skip(
+      `The real browser could not return to the product page: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+  await assertNoChallengeOnPage("the product page", page, response);
+}
+
 /**
  * Clicks the theme's real on-page Add-to-cart control — the one thing a
  * plain HTTP request structurally cannot prove, since it depends on the
@@ -21,20 +100,7 @@ export async function checkAddToCart(
   variantLabel: string,
   quantity: number,
 ): Promise<string> {
-  // The search step navigates away from the product page — a real shopper
-  // who searched would land back on it before buying, so return there
-  // rather than assuming the page is still where an earlier step left it.
-  if (new URL(page.url()).pathname !== new URL(productUrl).pathname) {
-    let response;
-    try {
-      response = await page.goto(productUrl, { waitUntil: "domcontentloaded", timeout: 20_000 });
-    } catch (err) {
-      throw new Skip(
-        `The real browser could not return to the product page: ${err instanceof Error ? err.message : err}`,
-      );
-    }
-    await assertNoChallengeOnPage("the product page", page, response);
-  }
+  await returnToProductPage(page, productUrl);
 
   const control = page
     .locator('form[action*="/cart/add"] button[type="submit"], form[action*="/cart/add"] input[type="submit"]')
@@ -46,6 +112,13 @@ export async function checkAddToCart(
         "the theme's default add-to-cart form; a custom or heavily modified theme layout may need a " +
         "different selector.",
     );
+  }
+
+  // The product-quantity step has already set the selector to the requested
+  // amount; expect exactly what the page will send, not what was asked for.
+  const selected = page.locator(PRODUCT_QTY_INPUT).first();
+  if ((await selected.count()) > 0) {
+    quantity = Number(await selected.inputValue().catch(() => "")) || quantity;
   }
 
   const before = await readCart(page, origin);
@@ -134,70 +207,77 @@ export async function checkCartPage(
 }
 
 /**
- * Bumps the cart quantity by one via whatever control the theme exposes,
- * then restores it. This selector is a best-effort heuristic across many
- * possible theme patterns (unlike add-to-cart's, which targets Shopify's own
- * platform-standard form) — so when a control is found but Playwright can't
- * actually interact with it, that is reported as inconclusive (Skip), not
- * proof the flow is broken.
+ * Changes the cart line's quantity up by one and back down, the way a shopper
+ * would: the theme's own + / − buttons, falling back to typing into the
+ * quantity box and moving focus away (never Enter — on many themes Enter
+ * submits the whole cart form, whose default button is Checkout). Each change
+ * is confirmed against /cart.js, so a control that only looks like it worked
+ * is still caught.
  */
 export async function checkCartQuantityUpdate(page: Page, origin: string): Promise<string> {
   const before = await readCart(page, origin);
-  const beforeCount = before?.item_count ?? 0;
-  if (beforeCount === 0) {
+  const start = before?.item_count ?? 0;
+  if (start === 0) {
     throw new Skip("Skipped — the cart is empty, so there is no quantity to change.");
   }
 
-  // Some themes render several hidden `name="quantity"` inputs (line-item
-  // templates not currently in use) ahead of the one real, visible control in
-  // DOM order — `:not([type="hidden"])` keeps `.first()` from grabbing one of
-  // those instead of the actual control a shopper would use.
-  const qtyInput = page
-    .locator(
-      'input[name^="updates["]:not([type="hidden"]), input[name="quantity"]:not([type="hidden"]), ' +
-        "[data-quantity-input] input:not([type=\"hidden\"])",
-    )
+  // `:visible` skips hidden line-item templates and product-card forms some
+  // themes render on the cart page ahead of the real control.
+  const plus = page.locator('button[name="plus"]:visible, [data-quantity-increase]:visible').first();
+  const minus = page.locator('button[name="minus"]:visible, [data-quantity-decrease]:visible').first();
+  const input = page
+    .locator('input[name^="updates["]:visible, [data-quantity-input] input:visible')
     .first();
-  const plusButton = page.locator('button[name="plus"], [data-quantity-increase]').first();
-  const minusButton = page.locator('button[name="minus"], [data-quantity-decrease]').first();
 
-  const hasInput = (await qtyInput.count()) > 0;
-  const hasStepper = !hasInput && (await plusButton.count()) > 0;
-  if (!hasInput && !hasStepper) {
+  const useButtons = (await plus.count()) > 0 && (await minus.count()) > 0;
+  if (!useButtons && (await input.count()) === 0) {
     throw new Skip(
       "No recognizable quantity control was found on the cart page — this theme's cart layout isn't " +
         "one this check supports yet.",
     );
   }
 
-  try {
-    if (hasInput) {
-      const current = Number(await qtyInput.inputValue().catch(() => "")) || 1;
-      await qtyInput.fill(String(current + 1), { timeout: 8000 });
-      await qtyInput.press("Enter").catch(() => {});
-    } else {
-      await plusButton.click({ timeout: 8000 });
+  const change = async (direction: 1 | -1, target: number) => {
+    try {
+      if (useButtons) {
+        // click() waits for the button to be enabled — − is disabled at 1 and
+        // themes briefly disable both while an update is in flight.
+        await (direction === 1 ? plus : minus).click({ timeout: 8000 });
+      } else {
+        await input.fill(String(target), { timeout: 8000 });
+        await input.press("Tab");
+      }
+    } catch (err) {
+      throw new Skip(
+        `Found a quantity control, but couldn't interact with it (${err instanceof Error ? err.message.split("\n")[0] : err}) — this theme's cart layout isn't fully supported yet.`,
+      );
     }
-  } catch (err) {
-    throw new Skip(
-      `Found a quantity control, but couldn't interact with it (${err instanceof Error ? err.message.split("\n")[0] : err}) — this theme's cart layout isn't fully supported yet.`,
+    const reached = await waitForItemCount(page, origin, target, 8000);
+    assertStillOnCart(page);
+    if (reached == null) {
+      const now = (await readCart(page, origin))?.item_count ?? "unknown";
+      throw new Error(
+        `${direction === 1 ? "Increasing" : "Decreasing"} the cart quantity did not update the cart ` +
+          `within 8s (expected ${target}, cart shows ${now}).`,
+      );
+    }
+  };
+
+  await change(1, start + 1);
+  await change(-1, start);
+
+  const how = useButtons ? "+ / − buttons" : "quantity box";
+  return `Cart quantity ${start} → ${start + 1} → ${start} using the cart's ${how}`;
+}
+
+function assertStillOnCart(page: Page) {
+  const { pathname } = new URL(page.url());
+  if (!/\/cart\/?$/.test(pathname)) {
+    throw new Error(
+      `Changing the cart quantity navigated away from the cart (landed on ${pathname}) instead of ` +
+        "updating it in place.",
     );
   }
-
-  const bumped = await waitForItemCount(page, origin, beforeCount + 1, 8000);
-  if (bumped == null) {
-    throw new Error(`Raising the cart quantity did not update the cart within 8s (still ${beforeCount}).`);
-  }
-
-  if (hasInput) {
-    await qtyInput.fill(String(beforeCount), { timeout: 8000 }).catch(() => {});
-    await qtyInput.press("Enter").catch(() => {});
-  } else if ((await minusButton.count()) > 0) {
-    await minusButton.click({ timeout: 8000 }).catch(() => {});
-  }
-  const restored = await waitForItemCount(page, origin, beforeCount, 8000);
-
-  return `Cart item count ${beforeCount} → ${bumped}${restored == null ? " (restore did not confirm — check the cart)" : " → restored"}`;
 }
 
 /**
