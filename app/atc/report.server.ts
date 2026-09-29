@@ -4,6 +4,7 @@ import prisma from "../db.server";
 import { getAppSettings } from "./app-settings.server";
 import { getRun } from "./store.server";
 import { postMessage, slackBotConfigured, uploadImagesToThread } from "./slack.server";
+import { NOT_REACHED } from "./checker.server";
 import type { FlowRun, RunStep } from "./types";
 
 export const AUDIENCES = ["client", "pdc", "dept-head"] as const;
@@ -82,14 +83,18 @@ export function buildRunReport(run: FlowRun, store: Pick<Store, "name" | "url">)
       : "None";
 
   const count = (st: RunStep["status"]) => run.steps.filter((s) => s.status === st).length;
-  const skipped = run.steps.filter((s) => s.status === "skip");
+  // Steps never reached because an earlier one failed aren't problems of their
+  // own — count them separately so the report doesn't read like a list of faults.
+  const notReached = run.steps.filter((s) => s.status === "skip" && s.detail === NOT_REACHED);
+  const skipped = run.steps.filter((s) => s.status === "skip" && s.detail !== NOT_REACHED);
   const tally =
     `${run.steps.length} checks: ${count("pass")} passed` +
     (count("warn") ? ` · ${count("warn")} warning${count("warn") > 1 ? "s" : ""}` : "") +
     (count("fail") ? ` · ${count("fail")} failed` : "") +
     (skipped.length
       ? ` · ${skipped.length} skipped (${skipped.map((s) => s.title).join(", ")})`
-      : "");
+      : "") +
+    (notReached.length ? ` · ${notReached.length} not run because of the failure above` : "");
 
   const title = clip(`Store Check Report – ${store.name}`, 150);
   const appUrl = process.env.APP_URL?.replace(/\/$/, "");

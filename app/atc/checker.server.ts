@@ -58,6 +58,8 @@ const STEP_PLAN: Array<[key: string, title: string, layer: RunStep["layer"]]> = 
   ["collection-listing", "Product is listed on a collection it links to", "discovery"],
 ];
 
+export const NOT_REACHED = "Not reached — an earlier check failed.";
+
 export function blankRun(id: string, opts: RunOptions): FlowRun {
   return {
     id,
@@ -249,7 +251,7 @@ export async function runCheck(
     for (const s of run.steps) {
       if (s.status === "pending") {
         s.status = "skip";
-        s.detail = "Not reached — an earlier check failed.";
+        s.detail = NOT_REACHED;
       }
     }
   } finally {
