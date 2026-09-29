@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Link, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { requireAdmin } from "../auth.server";
-import { listRuns, startRun } from "../atc/store.server";
+import { listChecks, startCheck, type Check } from "../atc/store.server";
 import { getStore, productUrlList, runOptionsFor } from "../atc/stores.server";
 import { describeWebBotAuthStatus } from "../atc/web-bot-auth.server";
 import { LAYERS } from "../atc/layers";
-import type { FlowRun } from "../atc/types";
-import { RunDetail } from "../components/RunDetail";
+import { CheckDetail } from "../components/CheckDetail";
 import { StatusBadge } from "../components/StatusBadge";
 
 async function loadStore(id: string | undefined) {
@@ -20,7 +19,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   await requireAdmin(request);
   const store = await loadStore(params.id);
   return {
-    openRunId: new URL(request.url).searchParams.get("run"),
+    // Links from Slack reports open a specific check (`?run=` from older reports).
+    openCheckId:
+      new URL(request.url).searchParams.get("check") ?? new URL(request.url).searchParams.get("run"),
     store: {
       id: store.id,
       name: store.name,
@@ -29,7 +30,11 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     },
     products: productUrlList(store),
     webBotAuth: describeWebBotAuthStatus(store),
-    runs: await listRuns(store.id, 10),
+    checks: (await listChecks(store.id, 10)).map((c) => ({
+      id: c.id,
+      status: c.status,
+      startedAt: c.startedAt,
+    })),
   };
 };
 
@@ -56,58 +61,57 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   const opts = runOptionsFor(store, { productUrl, quantity, discountCode });
 
-  return { runId: startRun(opts).id };
+  return { checkId: startCheck(opts).id };
 };
 
 export default function StoreDashboard() {
-  const { store, products, webBotAuth, runs, openRunId } = useLoaderData<typeof loader>();
+  const { store, products, webBotAuth, checks, openCheckId } = useLoaderData<typeof loader>();
   const starter = useFetcher<typeof action>();
-  const poller = useFetcher<{ run: FlowRun | null }>();
+  const poller = useFetcher<{ check: Check | null }>();
   const revalidator = useRevalidator();
 
   const formRef = useRef<HTMLFormElement>(null);
 
   // A run opened from the history list. Cleared whenever a new run is started,
   // so the freshly started run always wins.
-  const [pickedRunId, setPickedRunId] = useState<string | null>(openRunId);
+  const [pickedCheckId, setPickedCheckId] = useState<string | null>(openCheckId);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const startedRunId =
-    starter.data && "runId" in starter.data ? starter.data.runId : null;
-  const activeRunId = pickedRunId ?? startedRunId ?? null;
+  const startedCheckId =
+    starter.data && "checkId" in starter.data ? starter.data.checkId : null;
+  const activeCheckId = pickedCheckId ?? startedCheckId ?? null;
 
-  const activeRun = poller.data?.run ?? null;
+  const activeCheck = poller.data?.check ?? null;
   const inFlight =
-    activeRun?.status === "queued" || activeRun?.status === "running";
-  const settled =
-    activeRun?.status === "passed" || activeRun?.status === "failed";
+    activeCheck?.status === "queued" || activeCheck?.status === "running";
+  const settled = activeCheck != null && !inFlight;
 
   // Load the run once it becomes active, then poll while it is in flight.
   useEffect(() => {
-    if (!activeRunId) return;
-    poller.load(`/api/runs/${activeRunId}`);
+    if (!activeCheckId) return;
+    poller.load(`/api/checks/${activeCheckId}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRunId]);
+  }, [activeCheckId]);
 
   useEffect(() => {
-    if (!activeRunId || !inFlight) return;
+    if (!activeCheckId || !inFlight) return;
     const timer = setInterval(
-      () => poller.load(`/api/runs/${activeRunId}`),
+      () => poller.load(`/api/checks/${activeCheckId}`),
       1000,
     );
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRunId, inFlight]);
+  }, [activeCheckId, inFlight]);
 
   // Refresh the history sidebar once a run settles.
   useEffect(() => {
     if (settled) revalidator.revalidate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settled, activeRun?.id]);
+  }, [settled, activeCheck?.id]);
 
   const submit = () => {
-    setPickedRunId(null);
+    setPickedCheckId(null);
     if (formRef.current) starter.submit(formRef.current, { method: "POST" });
   };
 
@@ -200,15 +204,15 @@ export default function StoreDashboard() {
         </form>
       </s-section>
 
-      {activeRun && <RunDetail run={activeRun} />}
+      {activeCheck && <CheckDetail key={activeCheck.id} check={activeCheck} />}
 
       <s-section slot="aside" heading="Recent checks">
-        {runs.length === 0 ? (
+        {checks.length === 0 ? (
           <s-paragraph>No checks yet.</s-paragraph>
         ) : (
           <s-stack direction="block" gap="small-200">
-            {runs.map((r) => (
-              <s-clickable key={r.id} onClick={() => setPickedRunId(r.id)}>
+            {checks.map((r) => (
+              <s-clickable key={r.id} onClick={() => setPickedCheckId(r.id)}>
                 <s-stack direction="inline" gap="small-200" alignItems="center">
                   <StatusBadge status={r.status} />
                   <s-text>{new Date(r.startedAt).toLocaleString()}</s-text>

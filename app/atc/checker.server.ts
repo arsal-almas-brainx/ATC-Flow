@@ -65,6 +65,8 @@ export function blankRun(id: string, opts: RunOptions): FlowRun {
     id,
     storeId: opts.storeId,
     productUrl: opts.productUrl ?? "",
+    device: opts.device ?? "desktop",
+    groupId: opts.groupId,
     quantity: opts.quantity ?? 1,
     status: "queued",
     startedAt: Date.now(),
@@ -111,6 +113,8 @@ export async function runCheck(
   }
 
   run.status = "running";
+  // A mobile run waits in the queue behind desktop; time it from when it actually starts.
+  run.startedAt = Date.now();
   onUpdate(run);
 
   // Every check after the true prerequisite chain (home/product/add-to-cart)
@@ -187,7 +191,7 @@ export async function runCheck(
 
       await step("product-pick", async () => {
         const picked = opts.productUrl
-          ? { productUrl: opts.productUrl, detail: "Using the product chosen for this run" }
+          ? { productUrl: opts.productUrl, detail: opts.productNote ?? "Using the product chosen for this run" }
           : await pickProduct(page, origin, opts.productPool ?? []);
         productUrl = picked.productUrl;
         handle = handleFromUrl(productUrl);
@@ -238,7 +242,7 @@ export async function runCheck(
       await stepIsolated("collection-listing", () =>
         checkCollectionListing(page, origin, productUrl, handle),
       );
-    });
+    }, opts.device);
 
     // hardFailed means an isolated step failed — every step still ran, so
     // nothing here needs to be marked skip, but the run as a whole did find

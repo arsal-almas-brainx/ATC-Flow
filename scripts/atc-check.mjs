@@ -3,6 +3,7 @@
  *
  *   npm run atc:check -- https://your-store.com                 (picks a product itself)
  *   npm run atc:check -- https://your-store.com --auto          (ignore saved products)
+ *   npm run atc:check -- https://your-store.com --mobile        (phone screen + browser)
  *   npm run atc:check -- https://your-store.com/products/some-product
  *   npm run atc:check -- https://your-store.com/products/x --qty 2
  *   npm run atc:check -- https://your-store.com/products/x --password hunter2 --save
@@ -36,7 +37,7 @@ const target = argv.find((a) => !a.startsWith("--"));
 
 if (!target) {
   console.error(
-    "Usage: npm run atc:check -- <store-or-product-url> [--qty N] [--password P] [--discount CODE] [--search TERM] [--auto] [--save]\n" +
+    "Usage: npm run atc:check -- <store-or-product-url> [--qty N] [--password P] [--discount CODE] [--search TERM] [--auto] [--mobile] [--save]\n" +
       "                              [--wba-signature S] [--wba-signature-input SI] [--wba-expires DATE]",
   );
   process.exit(2);
@@ -121,6 +122,7 @@ const webBotAuthConfigured =
 const opts = {
   storeId: store.id,
   storeUrl: store.url,
+  device: argv.includes("--mobile") ? "mobile" : "desktop",
   // A store URL alone lets the run pick a product itself, as the app does.
   productUrl: /\/products\/[^/]+/.test(new URL(target).pathname) ? target : undefined,
   // --auto ignores the store's saved products and picks from its best sellers.
@@ -152,7 +154,7 @@ const expiryNote = (() => {
 
 console.log(`\nATC flow check → ${target}`);
 console.log(
-  `store ${store.name} · quantity ${opts.quantity}` +
+  `store ${store.name} · ${opts.device} · quantity ${opts.quantity}` +
     `${password ? " · storefront password loaded" : ""}` +
     ` · web bot auth: ${webBotAuthConfigured ? `configured${expiryNote}` : "not configured — the run will be skipped"}\n`,
 );

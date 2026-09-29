@@ -4,17 +4,18 @@ import { LAYERS } from "../atc/layers";
 import { StatusBadge } from "./StatusBadge";
 import { RunProgressBar } from "./RunProgressBar";
 import { LayerCard } from "./LayerCard";
-import { SlackSend } from "./SlackSend";
 
-export function RunDetail({ run }: { run: FlowRun }) {
+export function RunDetail({ run, label }: { run: FlowRun; label?: string }) {
   const [screenshot, setScreenshot] = useState<{ url: string; title: string } | null>(null);
   const warnings = run.steps.filter((s) => s.status === "warn").length;
   const inFlight = run.status === "queued" || run.status === "running";
 
   const viewScreenshot = (url: string, title: string) => setScreenshot({ url, title });
 
-  const heading =
-    run.status === "skipped"
+  const status =
+    run.status === "queued"
+      ? "Waiting for the desktop check to finish…"
+      : run.status === "skipped"
       ? "Not configured yet"
       : run.status === "failed"
         ? "The flow is broken"
@@ -23,6 +24,7 @@ export function RunDetail({ run }: { run: FlowRun }) {
             ? "Flow works, with warnings"
             : "Flow verified through checkout"
           : "Checking…";
+  const heading = label ? `${label}: ${status}` : status;
 
   const duration =
     run.finishedAt != null ? `${((run.finishedAt - run.startedAt) / 1000).toFixed(1)}s` : null;
@@ -78,8 +80,6 @@ export function RunDetail({ run }: { run: FlowRun }) {
             </s-paragraph>
           </s-banner>
         )}
-
-        {!inFlight && <SlackSend key={run.id} runId={run.id} />}
 
         {LAYERS.map((layer) => (
           <LayerCard

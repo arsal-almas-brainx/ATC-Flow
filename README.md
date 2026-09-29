@@ -69,7 +69,10 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
 
 - **Stores** (`/app`) — every client store, its Web Bot Auth status and its last check. Add a store
   with its name, storefront URL and one or more product URLs.
-- **A store's page** — **Run check** picks the product itself: one of the store's saved product
+- **A store's page** — **Run check** runs the whole flow twice, first on desktop (1280×800) and
+  then on mobile (Playwright's iPhone 13 profile: phone screen, touch, mobile browser), testing the
+  same product on both. Switch between **Desktop** and **Mobile** to see each run's results.
+  It picks the product itself: one of the store's saved product
   URLs at random, or, with none saved, an in-stock product from the store's best sellers
   (`/collections/all?sort_by=best-selling`, falling back to `/products.json`). Click **Test a
   specific product, or set advanced options** to test one product URL, or change the quantity or
@@ -87,7 +90,7 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
     browser — only whether one is stored.
   - *Delete store* — removes it with all of its check history and screenshots.
 
-- **Send to Slack** — under every finished check. Tick the client, PDC and/or department-head
+- **Send to Slack** — on every finished check; one report covers both desktop and mobile. Tick the client, PDC and/or department-head
   channel, optionally **Preview message**, then **Send report**. The report lists the result, the
   product tested, the time (EST) and every failed or warning step with its reason; screenshots of
   those steps are posted in a thread under it. Every send, successful or not, is recorded and
@@ -99,6 +102,13 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
   shows which workspace and bot the token belongs to. In Slack, a channel's ID is at the bottom of its
   details panel.
 
+## Data retention
+
+Check results and Slack send records are kept permanently — they are the audit history. Only step
+screenshots are deleted, once they are older than `SCREENSHOT_RETENTION_DAYS` (default 30); the
+step then shows "Screenshot removed". The cleanup runs a minute after the server starts and then
+daily ([app/atc/retention.server.ts](app/atc/retention.server.ts)).
+
 ## Checking from the terminal
 
 The same engine runs from the command line. The URL must be on a store already added in the super
@@ -107,6 +117,7 @@ admin; its saved password and Web Bot Auth signature are used:
 ```bash
 npm run atc:check -- https://your-store.com                  # picks a product itself
 npm run atc:check -- https://your-store.com --auto           # ignore saved products
+npm run atc:check -- https://your-store.com --mobile         # phone screen + mobile browser
 npm run atc:check -- https://your-store.com/products/some-product
 npm run atc:check -- https://your-store.com/products/x --qty 2
 npm run atc:check -- https://your-store.com/products/x --discount SAVE10
@@ -273,6 +284,8 @@ app/atc/app-settings.server.ts   global settings (PDC / department-head Slack ch
 app/atc/slack.server.ts     Slack API: bot identity, posting, screenshot uploads, channel ID validation
 app/atc/report.server.ts    builds a run's Slack report and sends it; records every send (SlackDelivery)
 app/atc/checks/product-pick.server.ts   picks the product to test (saved pool or best sellers)
+app/atc/retention.server.ts deletes screenshots older than the retention period (daily)
+app/components/CheckDetail.tsx   one check: Desktop / Mobile switch + Send to Slack
 app/atc/web-bot-auth.server.ts   resolves a store's Web Bot Auth signature and its expiry status
 app/atc/types.ts            RunStep / FlowRun / RunOptions shapes
 app/atc/layers.ts           display metadata for the 4 layers (storefront/discovery/cart/checkout)
@@ -283,7 +296,8 @@ app/routes/app.stores.$id._index.tsx    a store's dashboard: Run button, live re
 app/routes/app.stores.$id.settings.tsx  a store's details, storefront password, Web Bot Auth
 app/routes/app.settings.tsx global settings
 app/routes/api.runs.$id.tsx polled for live progress
-app/routes/api.runs.$id_.slack.tsx   Slack channels, preview and send for one run
+app/routes/api.checks.$id.tsx       polled for a check's live progress (desktop + mobile)
+app/routes/api.checks.$id_.slack.tsx   Slack channels, preview and send for one check
 scripts/atc-check.mjs       the same engine from the terminal
 prisma/schema.prisma        Store (config) + AppSetting (global) + FlowRun (history) + SlackDelivery (audit)
 ```

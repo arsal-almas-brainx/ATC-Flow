@@ -55,7 +55,28 @@ async function getBrowser(): Promise<Browser> {
   return browser;
 }
 
-async function acquireBrowserContext(): Promise<{
+export type Device = "desktop" | "mobile";
+
+const DESKTOP = {
+  userAgent:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) " +
+    "Chrome/141.0.0.0 Safari/537.36",
+  viewport: { width: 1280, height: 800 },
+};
+
+/**
+ * Playwright's iPhone 13 profile — phone viewport, touch, mobile user agent —
+ * at 2x rather than 3x pixel density so screenshots stay a sensible size.
+ */
+async function mobileProfile() {
+  const { devices } = await import("playwright");
+  const iphone = { ...devices["iPhone 13"], deviceScaleFactor: 2 };
+  // Only meaningful to playwright's test runner, not to newContext().
+  delete (iphone as { defaultBrowserType?: string }).defaultBrowserType;
+  return iphone;
+}
+
+async function acquireBrowserContext(device: Device): Promise<{
   context: BrowserContext;
   release: () => Promise<void>;
 }> {
@@ -67,12 +88,7 @@ async function acquireBrowserContext(): Promise<{
   clearIdleTimer();
 
   const b = await getBrowser();
-  const context = await b.newContext({
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) " +
-      "Chrome/141.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 800 },
-  });
+  const context = await b.newContext(device === "mobile" ? await mobileProfile() : DESKTOP);
 
   let released = false;
   const release = async () => {
@@ -90,8 +106,11 @@ async function acquireBrowserContext(): Promise<{
  * behind any run already using the browser. The context is always released
  * afterwards, success, failure, or timeout.
  */
-export async function runWithBrowserSession<T>(fn: (page: Page) => Promise<T>): Promise<T> {
-  const { context, release } = await acquireBrowserContext();
+export async function runWithBrowserSession<T>(
+  fn: (page: Page) => Promise<T>,
+  device: Device = "desktop",
+): Promise<T> {
+  const { context, release } = await acquireBrowserContext(device);
   try {
     const page = await context.newPage();
     let timer: ReturnType<typeof setTimeout>;

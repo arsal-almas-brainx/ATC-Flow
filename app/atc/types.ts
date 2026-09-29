@@ -16,6 +16,8 @@ export type RunStep = {
   durationMs?: number;
   /** Filesystem path to a viewport screenshot taken right after this step settled. */
   screenshotPath?: string;
+  /** The screenshot was deleted by the retention job (see retention.server.ts). */
+  screenshotExpired?: boolean;
 };
 
 /**
@@ -25,10 +27,15 @@ export type RunStep = {
  */
 export type RunStatus = "queued" | "running" | "passed" | "failed" | "skipped";
 
+export type Device = "desktop" | "mobile";
+
 export type FlowRun = {
   id: string;
   storeId: string;
   productUrl: string;
+  device: Device;
+  /** Shared by the desktop and mobile runs of one check. */
+  groupId?: string;
   quantity: number;
   status: RunStatus;
   startedAt: number;
@@ -51,6 +58,11 @@ export type RunOptions = {
    */
   productUrl?: string;
   productPool?: string[];
+  /** Shown on the product-pick step when `productUrl` is given, e.g. "Same product as the desktop check". */
+  productNote?: string;
+  /** Screen and browser profile to emulate. Defaults to desktop. */
+  device?: Device;
+  groupId?: string;
   quantity?: number;
   /** Only needed while the storefront is password protected. */
   storefrontPassword?: string;

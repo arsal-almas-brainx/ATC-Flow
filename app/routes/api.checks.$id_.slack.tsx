@@ -1,25 +1,27 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { requireAdmin } from "../auth.server";
 import prisma from "../db.server";
-import { getRun } from "../atc/store.server";
+import { getCheck } from "../atc/store.server";
 import {
   AUDIENCES,
-  buildRunReport,
+  buildCheckReport,
   listDeliveries,
-  sendRunReport,
+  sendCheckReport,
   slackTargets,
   type Audience,
 } from "../atc/report.server";
 import { slackBotConfigured } from "../atc/slack.server";
 
-/** Channels, a plain-text preview of the report, and past sends for one run. */
+/** Channels, a plain-text preview of the report, and past sends for one check. */
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   await requireAdmin(request);
-  const run = await getRun(String(params.id));
-  const store = run ? await prisma.store.findUnique({ where: { id: run.storeId } }) : null;
-  if (!run || !store) throw new Response("Not found", { status: 404 });
+  const check = await getCheck(String(params.id));
+  const store = check
+    ? await prisma.store.findUnique({ where: { id: check.runs[0].storeId } })
+    : null;
+  if (!check || !store) throw new Response("Not found", { status: 404 });
 
-  const { blocks } = buildRunReport(run, store);
+  const { blocks } = buildCheckReport(check, store);
   return {
     botConfigured: slackBotConfigured(),
     targets: (await slackTargets(store)).map((t) => ({
@@ -28,7 +30,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       configured: Boolean(t.channel),
     })),
     preview: previewText(blocks),
-    deliveries: await listDeliveries(run.id),
+    deliveries: await listDeliveries(check),
   };
 };
 
@@ -39,7 +41,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     .getAll("audience")
     .map(String)
     .filter((a): a is Audience => (AUDIENCES as readonly string[]).includes(a));
-  return sendRunReport(String(params.id), audiences);
+  return sendCheckReport(String(params.id), audiences);
 };
 
 type Block = {

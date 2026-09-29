@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import { requireAdmin } from "../auth.server";
-import prisma from "../db.server";
+import { listChecks } from "../atc/store.server";
 import { createStore, listStores, validateStoreInput } from "../atc/stores.server";
 import { describeWebBotAuthStatus } from "../atc/web-bot-auth.server";
 import { StatusBadge } from "../components/StatusBadge";
@@ -10,23 +10,16 @@ import type { RunStatus } from "../atc/types";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await requireAdmin(request);
   const stores = await listStores();
-  const lastRuns = await Promise.all(
-    stores.map((s) =>
-      prisma.flowRun.findFirst({
-        where: { storeId: s.id },
-        orderBy: { startedAt: "desc" },
-        select: { status: true, startedAt: true },
-      }),
-    ),
-  );
+  // The latest check's combined status (desktop + mobile), not just its last run.
+  const lastChecks = await Promise.all(stores.map((s) => listChecks(s.id, 1)));
   return {
     stores: stores.map((s, i) => ({
       id: s.id,
       name: s.name,
       url: s.url,
       webBotAuth: describeWebBotAuthStatus(s),
-      lastRun: lastRuns[i]
-        ? { status: lastRuns[i]!.status as RunStatus, startedAt: lastRuns[i]!.startedAt.getTime() }
+      lastRun: lastChecks[i][0]
+        ? { status: lastChecks[i][0].status as RunStatus, startedAt: lastChecks[i][0].startedAt }
         : null,
     })),
   };

@@ -72,6 +72,10 @@ model FlowRun {
   storeId     String
   store       Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
   productUrl  String
+  /// desktop | mobile
+  device      String    @default("desktop")
+  /// Runs started together by one "Run check" (desktop + mobile) share this.
+  groupId     String?
   quantity    Int       @default(1)
   status      String // queued | running | passed | failed | skipped
   startedAt   DateTime
@@ -84,6 +88,7 @@ model FlowRun {
   slackDeliveries SlackDelivery[]
 
   @@index([storeId, startedAt])
+  @@index([groupId])
 }
 
 /// Audit trail: every attempt to post a run's report to a Slack channel.

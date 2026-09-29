@@ -3,6 +3,10 @@ import { renderToPipeableStream } from "react-dom/server";
 import { ServerRouter } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
 import { type EntryContext } from "react-router";
+import { startRetentionJob } from "./atc/retention.server";
+
+// Server-wide background work, started once when the server loads.
+startRetentionJob();
 
 export const streamTimeout = 5000;
 

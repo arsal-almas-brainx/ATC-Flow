@@ -34,6 +34,10 @@ export function StepRow({
         </s-clickable>
       )}
 
+      {step.screenshotExpired && (
+        <s-text color="subdued">Screenshot removed — only recent screenshots are kept.</s-text>
+      )}
+
       {detail && !long && <s-text color="subdued">{detail}</s-text>}
 
       {detail && long && (

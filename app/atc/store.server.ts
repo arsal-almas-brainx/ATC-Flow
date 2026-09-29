@@ -15,32 +15,105 @@ const live = new Map<string, FlowRun>();
  */
 const STALE_AFTER_MS = 5 * 60_000;
 
-export function startRun(opts: RunOptions): FlowRun {
-  const id = randomUUID();
-  const run = blankRun(id, opts);
-  live.set(id, run);
-  void persist(run);
+export type Check = {
+  /** The group id, or the run id for runs from before desktop + mobile. */
+  id: string;
+  status: FlowRun["status"];
+  startedAt: number;
+  runs: FlowRun[];
+};
 
-  // Fire and forget — the UI polls getRun() for progress.
-  void runCheck(run, opts, (updated) => {
-    live.set(updated.id, { ...updated, steps: updated.steps.map((s) => ({ ...s })) });
-    void persist(updated);
-  })
-    .catch((err) => {
-      const current = live.get(id);
-      if (current) {
-        current.status = "failed";
-        current.error = err instanceof Error ? err.message : String(err);
-        current.finishedAt = Date.now();
-        void persist(current);
-      }
-    })
-    .finally(() => {
-      // Keep the finished run in memory briefly, then fall back to the DB copy.
-      setTimeout(() => live.delete(id), STALE_AFTER_MS).unref?.();
+/**
+ * One "Run check": a desktop run, then a mobile run of the same product.
+ * Both are created up front so the UI can show them straight away; they run
+ * one after the other (the browser takes one session at a time anyway).
+ */
+export function startCheck(opts: RunOptions): Check {
+  const groupId = randomUUID();
+  const desktopOpts: RunOptions = { ...opts, device: "desktop", groupId };
+  const desktop = register(blankRun(randomUUID(), desktopOpts));
+  const mobile = register(blankRun(randomUUID(), { ...opts, device: "mobile", groupId }));
+
+  void (async () => {
+    const done = await execute(desktop, desktopOpts);
+    const sameProduct = !opts.productUrl && done.productUrl;
+    await execute(mobile, {
+      ...opts,
+      device: "mobile",
+      groupId,
+      productUrl: opts.productUrl || done.productUrl || undefined,
+      productNote: sameProduct ? "Same product as the desktop check" : undefined,
     });
+  })();
 
+  return toCheck(groupId, [desktop, mobile]);
+}
+
+function register(run: FlowRun): FlowRun {
+  live.set(run.id, run);
+  void persist(run);
   return run;
+}
+
+async function execute(run: FlowRun, opts: RunOptions): Promise<FlowRun> {
+  try {
+    await runCheck(run, opts, (updated) => {
+      live.set(updated.id, { ...updated, steps: updated.steps.map((s) => ({ ...s })) });
+      void persist(updated);
+    });
+  } catch (err) {
+    run.status = "failed";
+    run.error = err instanceof Error ? err.message : String(err);
+    run.finishedAt = Date.now();
+    live.set(run.id, run);
+    void persist(run);
+  } finally {
+    // Keep the finished run in memory briefly, then fall back to the DB copy.
+    setTimeout(() => live.delete(run.id), STALE_AFTER_MS).unref?.();
+  }
+  return run;
+}
+
+const DEVICE_ORDER = { desktop: 0, mobile: 1 } as const;
+
+function toCheck(id: string, runs: FlowRun[]): Check {
+  const sorted = [...runs].sort((a, b) => DEVICE_ORDER[a.device] - DEVICE_ORDER[b.device]);
+  const statuses = sorted.map((r) => r.status);
+  const status: FlowRun["status"] = statuses.some((s) => s === "queued" || s === "running")
+    ? "running"
+    : statuses.includes("failed")
+      ? "failed"
+      : statuses.every((s) => s === "skipped")
+        ? "skipped"
+        : "passed";
+  return { id, status, startedAt: Math.min(...sorted.map((r) => r.startedAt)), runs: sorted };
+}
+
+/** A check by group id, or a single pre-grouping run by its own id. */
+export async function getCheck(id: string): Promise<Check | null> {
+  const rows = await prisma.flowRun.findMany({ where: { OR: [{ groupId: id }, { id }] } });
+  if (rows.length === 0) return null;
+  const runs = rows.map((row) => live.get(row.id) ?? markStale(rowToRun(row)));
+  return toCheck(id, runs);
+}
+
+/** The most recent checks for a store, newest first. */
+export async function listChecks(storeId: string, take = 10): Promise<Check[]> {
+  const rows = await prisma.flowRun.findMany({
+    where: { storeId },
+    orderBy: { startedAt: "desc" },
+    take: take * 2,
+  });
+  const groups = new Map<string, FlowRun[]>();
+  for (const row of rows) {
+    const run = live.get(row.id) ?? markStale(rowToRun(row));
+    const key = run.groupId ?? run.id;
+    groups.set(key, [...(groups.get(key) ?? []), run]);
+  }
+  return [...groups.entries()]
+    .map(([id, runs]) => toCheck(id, runs))
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, take);
 }
 
 export async function getRun(id: string): Promise<FlowRun | null> {
@@ -75,6 +148,8 @@ async function persist(run: FlowRun) {
   const data = {
     storeId: run.storeId,
     productUrl: run.productUrl,
+    device: run.device,
+    groupId: run.groupId ?? null,
     quantity: run.quantity,
     status: run.status,
     startedAt: new Date(run.startedAt),
@@ -102,6 +177,8 @@ function rowToRun(row: FlowRunRow): FlowRun {
     id: row.id,
     storeId: row.storeId,
     productUrl: row.productUrl,
+    device: row.device === "mobile" ? "mobile" : "desktop",
+    groupId: row.groupId ?? undefined,
     quantity: row.quantity,
     status: row.status as FlowRun["status"],
     startedAt: row.startedAt.getTime(),

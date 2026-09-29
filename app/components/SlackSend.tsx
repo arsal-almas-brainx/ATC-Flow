@@ -12,20 +12,20 @@ type SlackInfo = {
 type SendResult = { error: string } | { results: DeliveryResult[] };
 
 /** "Send to Slack" for one finished run: pick channels, preview, send, see past sends. */
-export function SlackSend({ runId }: { runId: string }) {
+export function SlackSend({ checkId }: { checkId: string }) {
   const info = useFetcher<SlackInfo>();
   const sender = useFetcher<SendResult>();
   const [selected, setSelected] = useState<Audience[] | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
-    info.load(`/api/runs/${runId}/slack`);
+    info.load(`/api/checks/${checkId}/slack`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId]);
+  }, [checkId]);
 
   // Refresh the "Sent" history once a send completes.
   useEffect(() => {
-    if (sender.state === "idle" && sender.data) info.load(`/api/runs/${runId}/slack`);
+    if (sender.state === "idle" && sender.data) info.load(`/api/checks/${checkId}/slack`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sender.state, sender.data]);
 
@@ -40,7 +40,7 @@ export function SlackSend({ runId }: { runId: string }) {
   const send = () => {
     const form = new FormData();
     for (const a of chosen) form.append("audience", a);
-    sender.submit(form, { method: "POST", action: `/api/runs/${runId}/slack` });
+    sender.submit(form, { method: "POST", action: `/api/checks/${checkId}/slack` });
   };
 
   const result = sender.data;
