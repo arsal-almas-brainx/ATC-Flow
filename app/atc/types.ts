@@ -28,12 +28,14 @@ export type RunStep = {
 export type RunStatus = "queued" | "running" | "passed" | "failed" | "skipped";
 
 export type Device = "desktop" | "mobile";
+export type Trigger = "manual" | "schedule";
 
 export type FlowRun = {
   id: string;
   storeId: string;
   productUrl: string;
   device: Device;
+  trigger: Trigger;
   /** Shared by the desktop and mobile runs of one check. */
   groupId?: string;
   quantity: number;
@@ -63,6 +65,8 @@ export type RunOptions = {
   /** Screen and browser profile to emulate. Defaults to desktop. */
   device?: Device;
   groupId?: string;
+  /** What started the run. Defaults to manual. */
+  trigger?: Trigger;
   quantity?: number;
   /** Only needed while the storefront is password protected. */
   storefrontPassword?: string;

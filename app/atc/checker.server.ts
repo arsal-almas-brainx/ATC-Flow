@@ -66,6 +66,7 @@ export function blankRun(id: string, opts: RunOptions): FlowRun {
     storeId: opts.storeId,
     productUrl: opts.productUrl ?? "",
     device: opts.device ?? "desktop",
+    trigger: opts.trigger ?? "manual",
     groupId: opts.groupId,
     quantity: opts.quantity ?? 1,
     status: "queued",
@@ -200,7 +201,15 @@ export async function runCheck(
       });
 
       await step("product-page", async () => {
-        const result = await checkProductPage(page, productUrl);
+        const result = await checkProductPage(page, productUrl).catch((err: unknown) => {
+          // A link typed in by hand (saved or per-run) 404ing is often just a
+          // wrong link; an automatically picked one came from the store itself.
+          const typedIn = Boolean(opts.productUrl) || (opts.productPool?.length ?? 0) > 0;
+          if (typedIn && err instanceof Error && /HTTP 404/.test(err.message)) {
+            err.message += " Make sure the product link is correct.";
+          }
+          throw err;
+        });
         productTitle = result.title;
         variantId = result.variantId;
         return result.detail;

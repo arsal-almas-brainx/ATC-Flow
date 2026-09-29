@@ -2,6 +2,8 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import { requireAdmin } from "../auth.server";
 import { listChecks } from "../atc/store.server";
+import { scheduleOf } from "../atc/scheduler.server";
+import { describeSchedule, formatEastern } from "../atc/schedule";
 import { createStore, listStores, validateStoreInput } from "../atc/stores.server";
 import { describeWebBotAuthStatus } from "../atc/web-bot-auth.server";
 import { StatusBadge } from "../components/StatusBadge";
@@ -18,6 +20,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       name: s.name,
       url: s.url,
       webBotAuth: describeWebBotAuthStatus(s),
+      schedule: s.scheduleEnabled
+        ? {
+            description: describeSchedule(scheduleOf(s)),
+            nextRunAt: s.nextRunAt ? formatEastern(s.nextRunAt) : null,
+          }
+        : null,
       lastRun: lastChecks[i][0]
         ? { status: lastChecks[i][0].status as RunStatus, startedAt: lastChecks[i][0].startedAt }
         : null,
@@ -54,6 +62,7 @@ export default function Stores() {
             <s-table-header-row>
               <s-table-header>Store</s-table-header>
               <s-table-header>Web Bot Auth</s-table-header>
+              <s-table-header>Schedule</s-table-header>
               <s-table-header>Last check</s-table-header>
             </s-table-header-row>
             <s-table-body>
@@ -85,6 +94,18 @@ export default function Stores() {
                             ? "Active"
                             : "Not configured"}
                     </s-badge>
+                  </s-table-cell>
+                  <s-table-cell>
+                    {s.schedule ? (
+                      <s-stack direction="block" gap="small-500">
+                        <s-text>{s.schedule.description}</s-text>
+                        {s.schedule.nextRunAt && (
+                          <s-text color="subdued">Next: {s.schedule.nextRunAt}</s-text>
+                        )}
+                      </s-stack>
+                    ) : (
+                      <s-text color="subdued">Off</s-text>
+                    )}
                   </s-table-cell>
                   <s-table-cell>
                     {s.lastRun ? (

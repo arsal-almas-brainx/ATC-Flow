@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { requireAdmin } from "../auth.server";
+import prisma from "../db.server";
 import {
   deleteStore,
   getStore,
@@ -11,6 +12,8 @@ import {
   validateStoreInput,
 } from "../atc/stores.server";
 import { describeWebBotAuthStatus } from "../atc/web-bot-auth.server";
+import { refreshNextRun, scheduleOf } from "../atc/scheduler.server";
+import { describeSchedule, formatEastern, parseTime } from "../atc/schedule";
 
 async function loadStore(id: string | undefined) {
   const store = id ? await getStore(id) : null;
@@ -33,6 +36,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     },
     // Never send secret values back to the browser — only their status.
     passwordSaved: store.storefrontPassword !== null,
+    schedule: {
+      enabled: store.scheduleEnabled,
+      period: store.schedulePeriod,
+      frequency: String(store.scheduleFrequency),
+      time: store.scheduleTime,
+      description: describeSchedule(scheduleOf(store)),
+      nextRunAt: store.nextRunAt ? formatEastern(store.nextRunAt) : null,
+    },
     webBotAuth: describeWebBotAuthStatus(store),
   };
 };
@@ -55,6 +66,27 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     if ("error" in result) return { detailsError: result.error };
     await updateStore(store.id, result.data);
     return { detailsSavedMessage: "Store details saved." };
+  }
+
+  if (intent === "save-schedule") {
+    const period = String(form.get("period") ?? "day");
+    const frequency = Number(form.get("frequency") ?? 1);
+    const time = String(form.get("time") ?? "").trim();
+    if (!["day", "week", "month"].includes(period)) return { scheduleError: "Pick a period." };
+    if (![1, 2].includes(frequency)) return { scheduleError: "Pick once or twice." };
+    const parsed = parseTime(time);
+    if (!parsed) return { scheduleError: "Time must be 24-hour HH:MM, e.g. 09:00 or 21:30." };
+    await prisma.store.update({
+      where: { id: store.id },
+      data: {
+        scheduleEnabled: form.get("enabled") === "on",
+        schedulePeriod: period,
+        scheduleFrequency: frequency,
+        scheduleTime: `${String(parsed.h).padStart(2, "0")}:${String(parsed.m).padStart(2, "0")}`,
+      },
+    });
+    await refreshNextRun(store.id);
+    return { scheduleSavedMessage: "Schedule saved." };
   }
 
   if (intent === "save-password") {
@@ -91,6 +123,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 type ActionData = {
+  scheduleError?: string;
+  scheduleSavedMessage?: string;
   detailsError?: string;
   detailsSavedMessage?: string;
   savedMessage?: string;
@@ -98,15 +132,19 @@ type ActionData = {
 };
 
 export default function StoreSettings() {
-  const { store, passwordSaved, webBotAuth } = useLoaderData<typeof loader>();
+  const { store, passwordSaved, webBotAuth, schedule } = useLoaderData<typeof loader>();
   const detailsSaver = useFetcher<ActionData>();
   const passwordSaver = useFetcher<ActionData>();
+  const scheduleSaver = useFetcher<ActionData>();
   const wbaSaver = useFetcher<ActionData>();
   const deleter = useFetcher();
   const revalidator = useRevalidator();
 
   const detailsFormRef = useRef<HTMLFormElement>(null);
   const passwordFormRef = useRef<HTMLFormElement>(null);
+  const scheduleFormRef = useRef<HTMLFormElement>(null);
+  const scheduleSavedMessage = scheduleSaver.data?.scheduleSavedMessage ?? null;
+  const scheduleError = scheduleSaver.data?.scheduleError ?? null;
   const wbaFormRef = useRef<HTMLFormElement>(null);
 
   const detailsSavedMessage = detailsSaver.data?.detailsSavedMessage ?? null;
@@ -115,7 +153,9 @@ export default function StoreSettings() {
   const wbaSavedMessage = wbaSaver.data?.wbaSavedMessage ?? null;
 
   useEffect(() => {
-    if (detailsSavedMessage || savedMessage || wbaSavedMessage) revalidator.revalidate();
+    if (detailsSavedMessage || savedMessage || wbaSavedMessage || scheduleSavedMessage) {
+      revalidator.revalidate();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailsSavedMessage, savedMessage, wbaSavedMessage]);
 
@@ -198,6 +238,72 @@ export default function StoreSettings() {
                 {...(detailsSaver.state !== "idle" ? { loading: true } : {})}
               >
                 Save details
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </form>
+      </s-section>
+
+      <s-section heading="Schedule">
+        <form ref={scheduleFormRef} onSubmit={(e) => e.preventDefault()}>
+          <input type="hidden" name="intent" value="save-schedule" />
+          <s-stack direction="block" gap="base">
+            <s-stack direction="inline" gap="small-200" alignItems="center">
+              <s-text>Status:</s-text>
+              <s-badge tone={schedule.enabled ? "success" : "neutral"}>
+                {schedule.enabled ? "On" : "Off"}
+              </s-badge>
+              {schedule.enabled && <s-text color="subdued">{schedule.description}</s-text>}
+            </s-stack>
+            {schedule.enabled && schedule.nextRunAt && (
+              <s-paragraph>
+                Next check: <s-text type="strong">{schedule.nextRunAt} EST</s-text>. Each scheduled
+                check runs on desktop and mobile and posts its report to every Slack channel set
+                for this store.
+              </s-paragraph>
+            )}
+
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+              <input type="checkbox" name="enabled" defaultChecked={schedule.enabled} />
+              Run checks on a schedule
+            </label>
+            <s-stack direction="inline" gap="base">
+              <s-select label="Routine" name="period" value={schedule.period}>
+                <s-option value="day">Daily</s-option>
+                <s-option value="week">Weekly</s-option>
+                <s-option value="month">Monthly</s-option>
+              </s-select>
+              <s-select label="How often" name="frequency" value={schedule.frequency}>
+                <s-option value="1">Once</s-option>
+                <s-option value="2">Twice</s-option>
+              </s-select>
+              <s-text-field
+                label="Start time (EST, 24h)"
+                name="time"
+                value={schedule.time}
+                placeholder="09:00"
+              />
+            </s-stack>
+            <s-text color="subdued">
+              Runs are spread evenly: twice a day at 09:00 is 9 AM and 9 PM; twice a week is Monday
+              and Thursday; twice a month is the 1st and 15th.
+            </s-text>
+            {scheduleError && (
+              <s-banner tone="critical">
+                <s-paragraph>{scheduleError}</s-paragraph>
+              </s-banner>
+            )}
+            {scheduleSavedMessage && (
+              <s-banner tone="success">
+                <s-paragraph>{scheduleSavedMessage}</s-paragraph>
+              </s-banner>
+            )}
+            <s-stack direction="inline" gap="base">
+              <s-button
+                onClick={() => submit(scheduleSaver, scheduleFormRef)}
+                {...(scheduleSaver.state !== "idle" ? { loading: true } : {})}
+              >
+                Save schedule
               </s-button>
             </s-stack>
           </s-stack>

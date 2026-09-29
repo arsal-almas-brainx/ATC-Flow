@@ -33,11 +33,11 @@ primary_region = "bom"
   internal_port = 3000
   force_https = true
 
-  # The machine sleeps when idle and wakes on the first request, so an app only
-  # you use costs cents a month. Cold start is a few seconds on the first load.
-  auto_stop_machines = "stop"
+  # Always on: scheduled checks and the daily screenshot cleanup run inside
+  # this server, so a machine that sleeps when idle would miss them.
+  auto_stop_machines = "off"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ["app"]
 
 [[vm]]

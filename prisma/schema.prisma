@@ -50,6 +50,18 @@ model Store {
   webBotAuthSignatureInput String?
   webBotAuthExpiresAt      DateTime?
 
+  /// Scheduled checks — see app/atc/schedule.ts. Times are US Eastern.
+  scheduleEnabled   Boolean   @default(false)
+  /// day | week | month
+  schedulePeriod    String    @default("day")
+  /// Runs per period, 1–3.
+  scheduleFrequency Int       @default(1)
+  /// "HH:MM", 24h, Eastern time.
+  scheduleTime      String    @default("09:00")
+  /// When the scheduler next starts a check. Null while the schedule is off.
+  nextRunAt         DateTime?
+  lastScheduledAt   DateTime?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   runs      FlowRun[]
@@ -74,6 +86,8 @@ model FlowRun {
   productUrl  String
   /// desktop | mobile
   device      String    @default("desktop")
+  /// manual | schedule
+  trigger     String    @default("manual")
   /// Runs started together by one "Run check" (desktop + mobile) share this.
   groupId     String?
   quantity    Int       @default(1)

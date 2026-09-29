@@ -86,6 +86,12 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
     Shopify Admin → Online Store → Preferences → Crawler access. Shows **Not configured / Active /
     Expires in N days / Expired**. There is no API to create or renew one, so the badge is the only
     warning you get before checks start skipping.
+  - *Schedule* — **Routine** (daily / weekly / monthly) and **How often** (once / twice) with a
+    start time in Eastern time. Twice spreads the runs evenly: daily 9 AM and 9 PM, weekly Monday
+    and Thursday, monthly the 1st and 15th. Each scheduled check runs desktop + mobile and posts
+    its report to every Slack channel set for the store. The Stores list shows each schedule and
+    its next run; scheduled checks are tagged **Scheduled** in Recent checks. A run missed while
+    the server was down happens once when it's back.
   - *Storefront password* — only while the store is password protected. Never sent back to the
     browser — only whether one is stored.
   - *Delete store* — removes it with all of its check history and screenshots.
@@ -142,7 +148,9 @@ fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=$(openssl rand -hex 32) SLACK_
 fly deploy
 ```
 
-The SQLite database and screenshots live on the `data` volume, so they survive redeploys.
+The SQLite database and screenshots live on the `data` volume, so they survive redeploys. The
+machine is kept always on (`min_machines_running = 1`) because scheduled checks and the daily
+screenshot cleanup run inside the server.
 Migrations run on every start (`npm run docker-start`).
 
 ---
@@ -284,6 +292,8 @@ app/atc/app-settings.server.ts   global settings (PDC / department-head Slack ch
 app/atc/slack.server.ts     Slack API: bot identity, posting, screenshot uploads, channel ID validation
 app/atc/report.server.ts    builds a run's Slack report and sends it; records every send (SlackDelivery)
 app/atc/checks/product-pick.server.ts   picks the product to test (saved pool or best sellers)
+app/atc/schedule.ts         schedule maths (next run, Eastern time + daylight saving) — pure
+app/atc/scheduler.server.ts once-a-minute scheduler: starts due checks, posts reports to Slack
 app/atc/retention.server.ts deletes screenshots older than the retention period (daily)
 app/components/CheckDetail.tsx   one check: Desktop / Mobile switch + Send to Slack
 app/atc/web-bot-auth.server.ts   resolves a store's Web Bot Auth signature and its expiry status

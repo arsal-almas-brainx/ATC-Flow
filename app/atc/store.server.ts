@@ -20,6 +20,7 @@ export type Check = {
   id: string;
   status: FlowRun["status"];
   startedAt: number;
+  trigger: FlowRun["trigger"];
   runs: FlowRun[];
 };
 
@@ -28,7 +29,7 @@ export type Check = {
  * Both are created up front so the UI can show them straight away; they run
  * one after the other (the browser takes one session at a time anyway).
  */
-export function startCheck(opts: RunOptions): Check {
+export function startCheck(opts: RunOptions, onComplete?: (checkId: string) => void): Check {
   const groupId = randomUUID();
   const desktopOpts: RunOptions = { ...opts, device: "desktop", groupId };
   const desktop = register(blankRun(randomUUID(), desktopOpts));
@@ -44,7 +45,8 @@ export function startCheck(opts: RunOptions): Check {
       productUrl: opts.productUrl || done.productUrl || undefined,
       productNote: sameProduct ? "Same product as the desktop check" : undefined,
     });
-  })();
+    onComplete?.(groupId);
+  })().catch((err) => console.error("[atc] check failed to run", groupId, err));
 
   return toCheck(groupId, [desktop, mobile]);
 }
@@ -86,7 +88,13 @@ function toCheck(id: string, runs: FlowRun[]): Check {
       : statuses.every((s) => s === "skipped")
         ? "skipped"
         : "passed";
-  return { id, status, startedAt: Math.min(...sorted.map((r) => r.startedAt)), runs: sorted };
+  return {
+    id,
+    status,
+    startedAt: Math.min(...sorted.map((r) => r.startedAt)),
+    trigger: sorted[0].trigger,
+    runs: sorted,
+  };
 }
 
 /** A check by group id, or a single pre-grouping run by its own id. */
@@ -149,6 +157,7 @@ async function persist(run: FlowRun) {
     storeId: run.storeId,
     productUrl: run.productUrl,
     device: run.device,
+    trigger: run.trigger,
     groupId: run.groupId ?? null,
     quantity: run.quantity,
     status: run.status,
@@ -178,6 +187,7 @@ function rowToRun(row: FlowRunRow): FlowRun {
     storeId: row.storeId,
     productUrl: row.productUrl,
     device: row.device === "mobile" ? "mobile" : "desktop",
+    trigger: row.trigger === "schedule" ? "schedule" : "manual",
     groupId: row.groupId ?? undefined,
     quantity: row.quantity,
     status: row.status as FlowRun["status"],

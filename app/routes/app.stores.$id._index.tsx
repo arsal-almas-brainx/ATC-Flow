@@ -33,6 +33,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     checks: (await listChecks(store.id, 10)).map((c) => ({
       id: c.id,
       status: c.status,
+      trigger: c.trigger,
       startedAt: c.startedAt,
     })),
   };
@@ -215,6 +216,7 @@ export default function StoreDashboard() {
               <s-clickable key={r.id} onClick={() => setPickedCheckId(r.id)}>
                 <s-stack direction="inline" gap="small-200" alignItems="center">
                   <StatusBadge status={r.status} />
+                  {r.trigger === "schedule" && <s-badge tone="info">Scheduled</s-badge>}
                   <s-text>{new Date(r.startedAt).toLocaleString()}</s-text>
                 </s-stack>
               </s-clickable>

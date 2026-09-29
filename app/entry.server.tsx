@@ -4,9 +4,11 @@ import { ServerRouter } from "react-router";
 import { createReadableStreamFromReadable } from "@react-router/node";
 import { type EntryContext } from "react-router";
 import { startRetentionJob } from "./atc/retention.server";
+import { startScheduler } from "./atc/scheduler.server";
 
 // Server-wide background work, started once when the server loads.
 startRetentionJob();
+startScheduler();
 
 export const streamTimeout = 5000;
 
