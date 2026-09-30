@@ -8,6 +8,9 @@ export async function getAppSettings() {
       id: ID,
       pdcSlackChannel: null,
       deptHeadSlackChannel: null,
+      slackBotToken: null,
+      adminPasswordHash: null,
+      adminPasswordChangedAt: null,
       updatedAt: new Date(0),
     }
   );
@@ -21,5 +24,13 @@ export function saveAppSettings(data: {
     where: { id: ID },
     create: { id: ID, ...data },
     update: data,
+  });
+}
+
+export function saveSlackBotToken(token: string | null) {
+  return prisma.appSetting.upsert({
+    where: { id: ID },
+    create: { id: ID, slackBotToken: token },
+    update: { slackBotToken: token },
   });
 }

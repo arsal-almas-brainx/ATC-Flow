@@ -102,11 +102,17 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
   those steps are posted in a thread under it. Every send, successful or not, is recorded and
   listed under **Sent**. Set `APP_URL` (e.g. `https://atc-flow-app.fly.dev`) to add a "view the
   full report" link — it opens that run on the store's page.
-- **Settings** (`/app/settings`) — the PDC and department-head Slack channel IDs, which receive
-  every store's report. Posting uses one Slack bot whose token is the `SLACK_BOT_TOKEN` environment
-  variable (bot scopes `chat:write` and `files:write`); invite the bot to each channel. The page
-  shows which workspace and bot the token belongs to. In Slack, a channel's ID is at the bottom of its
-  details panel.
+- **Settings** (`/app/settings`)
+  - *Slack bot* — paste the bot token (`xoxb-…`, scopes `chat:write` and `files:write`). It's
+    tested with Slack before saving and never shown again; the page shows which workspace and bot
+    it belongs to. With no token saved here, the `SLACK_BOT_TOKEN` environment variable is used.
+  - *Slack channels* — the PDC and department-head channel IDs, which receive every store's
+    report. Invite the bot to each channel; a channel's ID is at the bottom of its details panel.
+  - *Admin password* — change it here (current password + new one twice, at least 10
+    characters). It's stored as an scrypt hash. Until it's changed here, `ADMIN_PASSWORD` is the
+    password. Changing it signs out everyone else. Forgotten it? On the server:
+    `npm run admin:reset-password -- "new password"`, or `-- --clear` to go back to
+    `ADMIN_PASSWORD`.
 
 ## Data retention
 
@@ -144,7 +150,7 @@ The config is already in the repo ([fly.toml](fly.toml), [Dockerfile](Dockerfile
 fly auth login
 fly apps create atc-flow-app                 # rename in fly.toml if the name is taken
 fly volumes create data --size 1 --region bom --app atc-flow-app
-fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=$(openssl rand -hex 32) SLACK_BOT_TOKEN=xoxb-... --app atc-flow-app
+fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=$(openssl rand -hex 32) --app atc-flow-app
 fly deploy
 ```
 
@@ -299,7 +305,9 @@ app/components/CheckDetail.tsx   one check: Desktop / Mobile switch + Send to Sl
 app/atc/web-bot-auth.server.ts   resolves a store's Web Bot Auth signature and its expiry status
 app/atc/types.ts            RunStep / FlowRun / RunOptions shapes
 app/atc/layers.ts           display metadata for the 4 layers (storefront/discovery/cart/checkout)
-app/auth.server.ts          admin password + signed session cookie
+app/auth.server.ts          admin password (Settings hash, or ADMIN_PASSWORD) + signed session cookie
+app/password-hash.server.ts scrypt hashing for the admin password
+scripts/reset-admin-password.mjs  resets a forgotten admin password
 app/routes/login.tsx        sign in
 app/routes/app._index.tsx   all stores + add a store
 app/routes/app.stores.$id._index.tsx    a store's dashboard: Run button, live results, recent checks

@@ -11,7 +11,8 @@
     "prisma": "prisma",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "atc:check": "node --experimental-strip-types scripts/atc-check.mjs"
+    "atc:check": "node --experimental-strip-types scripts/atc-check.mjs",
+    "admin:reset-password": "node --no-warnings --experimental-strip-types scripts/reset-admin-password.mjs"
   },
   "type": "module",
   "engines": {

@@ -11,13 +11,13 @@ import {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const next = safeNext(new URL(request.url).searchParams.get("next"));
   if (await isAdmin(request)) throw redirect(next);
-  return { next, configured: adminPasswordConfigured() };
+  return { next, configured: await adminPasswordConfigured() };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const form = await request.formData();
   const next = safeNext(String(form.get("next") ?? ""));
-  if (!checkAdminPassword(String(form.get("password") ?? ""))) {
+  if (!(await checkAdminPassword(String(form.get("password") ?? "")))) {
     return { error: "Wrong password." };
   }
   return signIn(request, next);

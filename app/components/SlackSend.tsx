@@ -57,7 +57,7 @@ export function SlackSend({ checkId }: { checkId: string }) {
         {!data.botConfigured ? (
           <s-paragraph>
             <s-text color="subdued">
-              Slack isn&apos;t connected yet — set SLACK_BOT_TOKEN on the server and restart it.
+              Slack isn&apos;t connected yet — add the bot token in Settings.
             </s-text>
           </s-paragraph>
         ) : (

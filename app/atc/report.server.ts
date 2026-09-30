@@ -176,7 +176,9 @@ export async function sendCheckReport(
   checkId: string,
   audiences: Audience[],
 ): Promise<{ error: string } | { results: DeliveryResult[] }> {
-  if (!slackBotConfigured()) return { error: "Slack isn't connected — SLACK_BOT_TOKEN is not set." };
+  if (!(await slackBotConfigured())) {
+    return { error: "Slack isn't connected — add the bot token in Settings." };
+  }
 
   const check = await getCheck(checkId);
   if (!check) return { error: "Check not found." };

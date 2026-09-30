@@ -57,7 +57,7 @@ export async function runDueChecks(now = new Date()): Promise<number> {
 }
 
 async function postScheduledReport(store: Store, checkId: string) {
-  if (!slackBotConfigured()) return;
+  if (!(await slackBotConfigured())) return;
   const audiences = (await slackTargets(store)).filter((t) => t.channel).map((t) => t.audience);
   if (audiences.length === 0) return;
   const result = await sendCheckReport(checkId, audiences.filter((a) => AUDIENCES.includes(a)));

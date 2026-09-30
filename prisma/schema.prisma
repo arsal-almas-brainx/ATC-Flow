@@ -75,6 +75,16 @@ model AppSetting {
   pdcSlackChannel      String?
   deptHeadSlackChannel String?
 
+  /// Slack bot token (xoxb-…). Takes precedence over the SLACK_BOT_TOKEN env
+  /// var. Never sent back to the browser.
+  slackBotToken String?
+
+  /// scrypt hash of the admin password, set from Settings. When null the
+  /// ADMIN_PASSWORD env var is the password. Never stored in plain text.
+  adminPasswordHash      String?
+  /// Sessions signed in before this are signed out.
+  adminPasswordChangedAt DateTime?
+
   updatedAt DateTime @updatedAt
 }
 

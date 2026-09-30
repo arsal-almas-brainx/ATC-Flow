@@ -23,7 +23,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   const { blocks } = buildCheckReport(check, store);
   return {
-    botConfigured: slackBotConfigured(),
+    botConfigured: await slackBotConfigured(),
     targets: (await slackTargets(store)).map((t) => ({
       audience: t.audience,
       label: t.label,
