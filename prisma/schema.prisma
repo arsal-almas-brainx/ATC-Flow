@@ -37,6 +37,9 @@ model Store {
   /// Slack channel ID (e.g. C0123ABCD) for this client's reports.
   slackChannel String?
 
+  /// Collection page the speed test measures. Null: /collections/all.
+  speedCollectionUrl String?
+
   /// Storefront (password-protection) password. Replayed through the real
   /// password form by the browser checker before anything else navigates —
   /// this is the shared storefront preview password, not an admin credential.
@@ -65,6 +68,7 @@ model Store {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   runs      FlowRun[]
+  speedRuns SpeedRun[]
 }
 
 /// Global settings — a single row (id 1).
@@ -78,6 +82,10 @@ model AppSetting {
   /// Slack bot token (xoxb-…). Takes precedence over the SLACK_BOT_TOKEN env
   /// var. Never sent back to the browser.
   slackBotToken String?
+
+  /// Google PageSpeed Insights API key. Takes precedence over the
+  /// PAGESPEED_API_KEY env var. Never sent back to the browser.
+  pageSpeedApiKey String?
 
   /// scrypt hash of the admin password, set from Settings. When null the
   /// ADMIN_PASSWORD env var is the password. Never stored in plain text.
@@ -118,8 +126,11 @@ model FlowRun {
 /// Audit trail: every attempt to post a run's report to a Slack channel.
 model SlackDelivery {
   id       String   @id @default(cuid())
-  runId    String
-  run      FlowRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// The flow check's first run (flow reports), or null for speed-only reports.
+  runId    String?
+  run      FlowRun?  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  speedRunId String?
+  speedRun   SpeedRun? @relation(fields: [speedRunId], references: [id], onDelete: Cascade)
   /// client | pdc | dept-head
   audience String
   channel  String
@@ -130,4 +141,24 @@ model SlackDelivery {
   sentAt   DateTime @default(now())
 
   @@index([runId])
+  @@index([speedRunId])
+}
+
+/// One speed test: Google PageSpeed Insights on the homepage, a collection and
+/// a product page, each on mobile and desktop.
+model SpeedRun {
+  id         String    @id
+  storeId    String
+  store      Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  /// manual | schedule
+  trigger    String    @default("manual")
+  /// running | done
+  status     String
+  startedAt  DateTime
+  finishedAt DateTime?
+  /// JSON-encoded SpeedResult[] — see app/atc/speed.server.ts
+  results    String    @default("[]")
+  slackDeliveries SlackDelivery[]
+
+  @@index([storeId, startedAt])
 }

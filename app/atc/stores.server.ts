@@ -1,11 +1,11 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import type { Store } from "@prisma/client";
-import prisma from "../db.server";
-import { resolveWebBotAuthCredentials } from "./web-bot-auth.server";
-import { screenshotRoot } from "./browser/screenshots.server";
-import { parseSlackChannel } from "./slack.server";
-import type { RunOptions } from "./types";
+import prisma from "../db.server.ts";
+import { resolveWebBotAuthCredentials } from "./web-bot-auth.server.ts";
+import { screenshotRoot } from "./browser/screenshots.server.ts";
+import { parseSlackChannel } from "./slack.server.ts";
+import type { RunOptions } from "./types.ts";
 
 /** Raw form values. Optional fields may be omitted (e.g. the quick "Add a store" form). */
 export type StoreInput = {
@@ -15,6 +15,7 @@ export type StoreInput = {
   discountCode?: string;
   searchQuery?: string;
   slackChannel?: string;
+  speedCollectionUrl?: string;
 };
 
 export type StoreData = {
@@ -24,6 +25,7 @@ export type StoreData = {
   discountCode: string | null;
   searchQuery: string | null;
   slackChannel: string | null;
+  speedCollectionUrl: string | null;
 };
 
 export function listStores() {
@@ -77,6 +79,19 @@ export function validateStoreInput(
   const slack = parseSlackChannel(input.slackChannel ?? "", "Client Slack channel");
   if ("error" in slack) return { error: slack.error };
 
+  const collection = input.speedCollectionUrl?.trim() || null;
+  if (collection) {
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(collection);
+    } catch {
+      // handled below
+    }
+    if (!parsed || parsed.origin !== url || !/^\/collections\/[^/]+/.test(parsed.pathname)) {
+      return { error: `The speed test collection must be a collection page on ${url} (…/collections/<handle>).` };
+    }
+  }
+
   return {
     data: {
       name,
@@ -85,6 +100,7 @@ export function validateStoreInput(
       discountCode: input.discountCode?.trim() || null,
       searchQuery: input.searchQuery?.trim() || null,
       slackChannel: slack.value,
+      speedCollectionUrl: collection,
     },
   };
 }

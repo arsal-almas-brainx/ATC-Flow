@@ -33,15 +33,26 @@ export async function unlockPasswordIfNeeded(
   }
 }
 
-/** Real browser navigates to the shop's homepage. */
+/**
+ * Real browser navigates to the shop's homepage. A slow first load (a cold
+ * CDN, a heavy theme) gets one retry; a homepage that still doesn't load is a
+ * real failure, and stops the run cleanly rather than letting later steps run
+ * against a page that is still loading.
+ */
 export async function checkHomeReachable(page: Page, origin: string): Promise<string> {
-  let response;
-  try {
-    response = await page.goto(origin, { waitUntil: "domcontentloaded", timeout: 20_000 });
-  } catch (err) {
-    throw new Skip(
-      `The real browser could not load the homepage: ${err instanceof Error ? err.message : err}`,
-    );
+  let response: Awaited<ReturnType<Page["goto"]>> = null;
+  for (const timeout of [30_000, 45_000]) {
+    try {
+      response = await page.goto(origin, { waitUntil: "domcontentloaded", timeout });
+      break;
+    } catch (err) {
+      if (timeout === 45_000) {
+        throw new Error(
+          `The homepage didn't load in a real browser (tried twice, up to 45s): ` +
+            `${err instanceof Error ? err.message.split("\n")[0] : err}`,
+        );
+      }
+    }
   }
   await assertNoChallengeOnPage("the homepage", page, response);
   if (!response?.ok()) {

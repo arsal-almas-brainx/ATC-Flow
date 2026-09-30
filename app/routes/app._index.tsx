@@ -1,10 +1,22 @@
+import { useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
+import {
+  Form,
+  Link,
+  redirect,
+  useActionData,
+  useLoaderData,
+  useNavigation,
+} from "react-router";
 import { requireAdmin } from "../auth.server";
 import { listChecks } from "../atc/store.server";
 import { scheduleOf } from "../atc/scheduler.server";
 import { describeSchedule, formatEastern } from "../atc/schedule";
-import { createStore, listStores, validateStoreInput } from "../atc/stores.server";
+import {
+  createStore,
+  listStores,
+  validateStoreInput,
+} from "../atc/stores.server";
 import { describeWebBotAuthStatus } from "../atc/web-bot-auth.server";
 import { StatusBadge } from "../components/StatusBadge";
 import type { RunStatus } from "../atc/types";
@@ -27,7 +39,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           }
         : null,
       lastRun: lastChecks[i][0]
-        ? { status: lastChecks[i][0].status as RunStatus, startedAt: lastChecks[i][0].startedAt }
+        ? {
+            status: lastChecks[i][0].status as RunStatus,
+            startedAt: lastChecks[i][0].startedAt,
+          }
         : null,
     })),
   };
@@ -51,10 +66,20 @@ export default function Stores() {
   const { stores } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
   const busy = useNavigation().state === "submitting";
+  const [adding, setAdding] = useState(false);
+  // With no stores yet, the form is the only thing to do here.
+  const showForm = adding || stores.length === 0;
 
   return (
     <s-page heading="Stores">
       <s-section heading={`Stores (${stores.length})`}>
+        {!showForm && (
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <s-button variant="primary" icon="plus" onClick={() => setAdding(true)}>
+              Add store
+            </s-button>
+          </div>
+        )}
         {stores.length === 0 ? (
           <s-paragraph>No stores yet. Add one below.</s-paragraph>
         ) : (
@@ -100,7 +125,9 @@ export default function Stores() {
                       <s-stack direction="block" gap="small-500">
                         <s-text>{s.schedule.description}</s-text>
                         {s.schedule.nextRunAt && (
-                          <s-text color="subdued">Next: {s.schedule.nextRunAt}</s-text>
+                          <s-text color="subdued">
+                            Next: {s.schedule.nextRunAt}
+                          </s-text>
                         )}
                       </s-stack>
                     ) : (
@@ -109,7 +136,11 @@ export default function Stores() {
                   </s-table-cell>
                   <s-table-cell>
                     {s.lastRun ? (
-                      <s-stack direction="inline" gap="small-200" alignItems="center">
+                      <s-stack
+                        direction="inline"
+                        gap="small-200"
+                        alignItems="center"
+                      >
                         <StatusBadge status={s.lastRun.status} />
                         <s-text color="subdued">
                           {new Date(s.lastRun.startedAt).toLocaleString()}
@@ -126,30 +157,49 @@ export default function Stores() {
         )}
       </s-section>
 
-      <s-section heading="Add a store">
-        <Form method="post">
-          <s-stack direction="block" gap="base">
-            <s-text-field label="Name" name="name" placeholder="Wonderfold EU" />
-            <s-url-field label="Store URL" name="url" placeholder="https://example.com" />
-            <s-text-area
-              label="Product URLs (optional)"
-              name="productUrls"
-              rows={3}
-              details="Optional, one per line. Each run tests one of these at random. Leave blank to pick an in-stock best seller automatically."
-            />
-            {result?.error && (
-              <s-banner tone="critical">
-                <s-paragraph>{result.error}</s-paragraph>
-              </s-banner>
-            )}
-            <s-stack direction="inline" gap="base">
-              <s-button type="submit" variant="primary" {...(busy ? { loading: true } : {})}>
-                Add store
-              </s-button>
+      {showForm && (
+        <s-section heading="Add a store">
+          <Form method="post">
+            <s-stack direction="block" gap="base">
+              <s-text-field
+                label="Name"
+                name="name"
+                placeholder="Wonderfold EU"
+              />
+              <s-url-field
+                label="Store URL"
+                name="url"
+                placeholder="https://example.com"
+              />
+              <s-text-area
+                label="Product URLs (optional)"
+                name="productUrls"
+                rows={3}
+                details="Optional, one per line. Each run tests one of these at random. Leave blank to pick an in-stock best seller automatically."
+              />
+              {result?.error && (
+                <s-banner tone="critical">
+                  <s-paragraph>{result.error}</s-paragraph>
+                </s-banner>
+              )}
+              <s-stack direction="inline" gap="base">
+                <s-button
+                  type="submit"
+                  variant="primary"
+                  {...(busy ? { loading: true } : {})}
+                >
+                  Add store
+                </s-button>
+                {stores.length > 0 && (
+                  <s-button variant="tertiary" onClick={() => setAdding(false)}>
+                    Cancel
+                  </s-button>
+                )}
+              </s-stack>
             </s-stack>
-          </s-stack>
-        </Form>
-      </s-section>
+          </Form>
+        </s-section>
+      )}
     </s-page>
   );
 }

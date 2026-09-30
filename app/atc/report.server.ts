@@ -6,6 +6,8 @@ import { getCheck, type Check } from "./store.server";
 import { postMessage, slackBotConfigured, uploadImagesToThread } from "./slack.server";
 import { NOT_REACHED } from "./checker.server";
 import type { FlowRun, RunStep } from "./types";
+import { getSpeedRun } from "./speed.server";
+import { PAGE_LABEL, PAGES, type SpeedRunView } from "./speed";
 
 export const AUDIENCES = ["client", "pdc", "dept-head"] as const;
 export type Audience = (typeof AUDIENCES)[number];
@@ -167,34 +169,19 @@ export function buildCheckReport(check: Check, store: Pick<Store, "name" | "url"
 
 export type DeliveryResult = { audience: Audience; label: string; ok: boolean; error?: string };
 
+type Shot = { filename: string; title: string; data: Buffer };
+
 /**
- * Posts one check's report to the chosen audiences. Screenshots of failed or
- * warning steps go into a thread under the report. Every attempt — success or
- * failure — is recorded in SlackDelivery, against the check's first run.
+ * Posts a message to each target, screenshots in a thread under it, and
+ * records every attempt — success or failure — in SlackDelivery.
  */
-export async function sendCheckReport(
-  checkId: string,
-  audiences: Audience[],
-): Promise<{ error: string } | { results: DeliveryResult[] }> {
-  if (!(await slackBotConfigured())) {
-    return { error: "Slack isn't connected — add the bot token in Settings." };
-  }
-
-  const check = await getCheck(checkId);
-  if (!check) return { error: "Check not found." };
-  if (check.status === "running" || check.status === "queued") {
-    return { error: "This check is still running — send it once it finishes." };
-  }
-  const store = await prisma.store.findUnique({ where: { id: check.runs[0].storeId } });
-  if (!store) return { error: "Store not found." };
-
-  const targets = (await slackTargets(store)).filter((t) => audiences.includes(t.audience));
-  if (targets.length === 0) return { error: "Pick at least one channel." };
-
-  const message = buildCheckReport(check, store);
-  const shots = await loadIssueScreenshots(check);
+async function deliver(
+  targets: SlackTarget[],
+  message: { text: string; blocks: unknown[] },
+  shots: Shot[],
+  link: { runId?: string; speedRunId?: string },
+): Promise<DeliveryResult[]> {
   const results: DeliveryResult[] = [];
-
   for (const target of targets) {
     if (!target.channel) {
       results.push({ ...target, ok: false, error: "no channel ID is set" });
@@ -213,7 +200,8 @@ export async function sendCheckReport(
     }
     await prisma.slackDelivery.create({
       data: {
-        runId: check.runs[0].id,
+        runId: link.runId ?? null,
+        speedRunId: link.speedRunId ?? null,
         audience: target.audience,
         channel: target.channel,
         ok: posted.ok,
@@ -223,7 +211,133 @@ export async function sendCheckReport(
     });
     results.push({ audience: target.audience, label: target.label, ok: posted.ok && !error, error });
   }
+  return results;
+}
+
+async function prepare(
+  storeId: string,
+  audiences: Audience[],
+): Promise<{ error: string } | { store: Store; targets: SlackTarget[] }> {
+  if (!(await slackBotConfigured())) {
+    return { error: "Slack isn't connected — add the bot token in Settings." };
+  }
+  const store = await prisma.store.findUnique({ where: { id: storeId } });
+  if (!store) return { error: "Store not found." };
+  const targets = (await slackTargets(store)).filter((t) => audiences.includes(t.audience));
+  if (targets.length === 0) return { error: "Pick at least one channel." };
+  return { store, targets };
+}
+
+/**
+ * Posts one check's report to the chosen audiences. With `speedRunId`, the
+ * speed test's results are added as a Page Speed section (scheduled runs).
+ */
+export async function sendCheckReport(
+  checkId: string,
+  audiences: Audience[],
+  options: { speedRunId?: string } = {},
+): Promise<{ error: string } | { results: DeliveryResult[] }> {
+  const check = await getCheck(checkId);
+  if (!check) return { error: "Check not found." };
+  if (check.status === "running" || check.status === "queued") {
+    return { error: "This check is still running — send it once it finishes." };
+  }
+  const ready = await prepare(check.runs[0].storeId, audiences);
+  if ("error" in ready) return { error: ready.error };
+
+  const message = buildCheckReport(check, ready.store);
+  const speed = options.speedRunId ? await getSpeedRun(options.speedRunId) : null;
+  if (speed) {
+    // Keep the "view full report" link last.
+    const tail = message.blocks.at(-1) as { type?: string; elements?: Array<{ text?: string }> };
+    const hasLink = tail?.type === "context" && tail.elements?.[0]?.text?.includes("View the full report");
+    const link = hasLink ? message.blocks.pop() : undefined;
+    message.blocks.push({ type: "divider" }, ...speedBlocks(speed));
+    if (link) message.blocks.push(link);
+  }
+  const results = await deliver(ready.targets, message, await loadIssueScreenshots(check), {
+    runId: check.runs[0].id,
+    speedRunId: speed?.id,
+  });
   return { results };
+}
+
+/** Posts a speed test on its own (the Speed tab's Send button). */
+export async function sendSpeedReport(
+  speedRunId: string,
+  audiences: Audience[],
+): Promise<{ error: string } | { results: DeliveryResult[] }> {
+  const speed = await getSpeedRun(speedRunId);
+  if (!speed) return { error: "Speed test not found." };
+  if (speed.status === "running") return { error: "This speed test is still running." };
+  const ready = await prepare(speed.storeId, audiences);
+  if ("error" in ready) return { error: ready.error };
+  const results = await deliver(ready.targets, buildSpeedReport(speed, ready.store), [], {
+    speedRunId: speed.id,
+  });
+  return { results };
+}
+
+const RATING_MARK = { GOOD: ":large_green_circle:", AVERAGE: ":large_orange_circle:", POOR: ":red_circle:" } as const;
+
+/** The Page Speed section: one line per page and device, then any alerts. */
+function speedBlocks(speed: SpeedRunView): unknown[] {
+  const lines = PAGES.flatMap((page) =>
+    (["mobile", "desktop"] as const).map((device) => {
+      const r = speed.results.find((x) => x.page === page && x.device === device);
+      const label = `${PAGE_LABEL[page]} Report (${device === "mobile" ? "Mobile" : "Desktop"})`;
+      if (!r) return `• ${label} — not measured`;
+      const name = r.reportUrl ? `<${r.reportUrl}|${label}>` : label;
+      if (r.score == null) return `• ${name} — ${esc(clip(r.error ?? "not measured", 160))}`;
+      return `• ${name} - ${RATING_MARK[r.rating ?? "POOR"]} ${r.rating} (${r.score})`;
+    }),
+  );
+  const blocks: unknown[] = [
+    { type: "section", text: { type: "mrkdwn", text: `*Page Speed Insights Reports:*\n${lines.join("\n")}` } },
+  ];
+  if (speed.alerts.length) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Speed alerts:*\n${speed.alerts.map((a) => `:warning: ${esc(a)}`).join("\n")}`,
+      },
+    });
+  }
+  return blocks;
+}
+
+export function buildSpeedReport(speed: SpeedRunView, store: Pick<Store, "name" | "url">) {
+  const title = clip(`Page Speed Report – ${store.name}`, 150);
+  const checkedAt = new Date(speed.startedAt).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "");
+  const blocks: unknown[] = [
+    { type: "header", text: { type: "plain_text", text: title } },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `<${store.url}|${esc(store.url.replace(/^https?:\/\//, ""))}> · Checked ${checkedAt} EST`,
+        },
+      ],
+    },
+    ...speedBlocks(speed),
+  ];
+  if (appUrl) {
+    blocks.push({
+      type: "context",
+      elements: [
+        { type: "mrkdwn", text: `<${appUrl}/app/stores/${speed.storeId}?tab=speed|View speed history>` },
+      ],
+    });
+  }
+  const text = `${title}: ${speed.alerts.length ? `${speed.alerts.length} alert(s)` : "no alerts"}`;
+  return { text, blocks };
 }
 
 async function loadIssueScreenshots(check: Check) {
@@ -239,10 +353,13 @@ async function loadIssueScreenshots(check: Check) {
   return out;
 }
 
-/** Recent Slack sends for a check, newest first — shown under its report. */
-export async function listDeliveries(check: Check) {
+/** Recent Slack sends for a check or a speed test, newest first — shown under it. */
+export async function listDeliveries(of: Check | { speedRunId: string }) {
   const rows = await prisma.slackDelivery.findMany({
-    where: { runId: { in: check.runs.map((r) => r.id) } },
+    where:
+      "speedRunId" in of
+        ? { speedRunId: of.speedRunId }
+        : { runId: { in: of.runs.map((r) => r.id) } },
     orderBy: { sentAt: "desc" },
     take: 20,
   });
@@ -253,4 +370,38 @@ export async function listDeliveries(check: Check) {
     error: r.error,
     sentAt: r.sentAt.getTime(),
   }));
+}
+
+type Block = {
+  type: string;
+  text?: { text: string };
+  fields?: Array<{ text: string }>;
+  elements?: Array<{ text: string }>;
+};
+
+/** Rough plain-text rendering of the Slack blocks, so the preview shows the real content. */
+export function previewText(blocks: unknown[]): string {
+  const unlink = (s: string) =>
+    s
+      .replace(/<([^|>]+)\|([^>]+)>/g, "$2")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/:white_check_mark:/g, "✅")
+      .replace(/:x:/g, "❌")
+      .replace(/:warning:/g, "⚠️")
+      .replace(/:double_vertical_bar:/g, "⏸")
+      .replace(/:hourglass:/g, "⏳")
+      .replace(/:large_green_circle:/g, "🟢")
+      .replace(/:large_orange_circle:/g, "🟠")
+      .replace(/:red_circle:/g, "🔴")
+      .replace(/\*/g, "");
+  return (blocks as Block[])
+    .map((b) => {
+      if (b.fields) return b.fields.map((f) => unlink(f.text).replace("\n", ": ")).join("\n");
+      if (b.elements) return b.elements.map((e) => unlink(e.text)).join(" ");
+      if (b.type === "divider") return "—";
+      return unlink(b.text?.text ?? "");
+    })
+    .join("\n\n");
 }

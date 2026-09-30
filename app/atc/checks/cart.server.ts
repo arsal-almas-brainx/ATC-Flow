@@ -3,7 +3,23 @@ import { Skip, Warn, money } from "../shared.server.ts";
 import { assertNoChallengeOnPage } from "../browser/challenge.server.ts";
 import { readCart, type CartJson } from "../browser/cart.server.ts";
 
-const PRODUCT_QTY_INPUT = 'input[name="quantity"]:visible';
+/**
+ * Quantity controls, across theme conventions: Shopify's own names
+ * (plus/minus, quantity, updates[]), data attributes, and — for themes that
+ * name nothing — accessible labels ("button-plus", "Increase quantity",
+ * "Quantity for …"). `:visible` skips hidden templates and closed drawers.
+ */
+const PLUS =
+  'button[name="plus"]:visible, [data-quantity-increase]:visible, ' +
+  'button[aria-label*="plus" i]:visible, button[aria-label*="increase" i]:visible';
+const MINUS =
+  'button[name="minus"]:visible, [data-quantity-decrease]:visible, ' +
+  'button[aria-label*="minus" i]:visible, button[aria-label*="decrease" i]:visible';
+const PRODUCT_QTY_INPUT =
+  'input[name="quantity"]:visible, input[type="number"][aria-label*="quantity" i]:visible';
+const CART_QTY_INPUT =
+  'input[name^="updates["]:visible, [data-quantity-input] input:visible, ' +
+  'input[type="number"][aria-label*="quantity" i]:visible';
 
 /**
  * Tests the product page's quantity selector the way a shopper uses it —
@@ -28,8 +44,8 @@ export async function checkProductQuantity(
     throw new Skip("This product page has no quantity selector — the theme adds one at a time.");
   }
 
-  const plus = page.locator('button[name="plus"]:visible, [data-quantity-increase]:visible').first();
-  const minus = page.locator('button[name="minus"]:visible, [data-quantity-decrease]:visible').first();
+  const plus = page.locator(PLUS).first();
+  const minus = page.locator(MINUS).first();
   const useButtons = (await plus.count()) > 0 && (await minus.count()) > 0;
 
   const read = async () => Number(await input.inputValue()) || 0;
@@ -223,10 +239,10 @@ export async function checkCartQuantityUpdate(page: Page, origin: string): Promi
 
   // `:visible` skips hidden line-item templates and product-card forms some
   // themes render on the cart page ahead of the real control.
-  const plus = page.locator('button[name="plus"]:visible, [data-quantity-increase]:visible').first();
-  const minus = page.locator('button[name="minus"]:visible, [data-quantity-decrease]:visible').first();
+  const plus = page.locator(PLUS).first();
+  const minus = page.locator(MINUS).first();
   const input = page
-    .locator('input[name^="updates["]:visible, [data-quantity-input] input:visible')
+    .locator(CART_QTY_INPUT)
     .first();
 
   const useButtons = (await plus.count()) > 0 && (await minus.count()) > 0;

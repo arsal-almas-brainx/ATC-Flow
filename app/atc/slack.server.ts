@@ -1,4 +1,4 @@
-import { getAppSettings } from "./app-settings.server";
+import { getAppSettings } from "./app-settings.server.ts";
 
 /**
  * Slack is reached through one bot. Its token is saved in Settings, or — when

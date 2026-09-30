@@ -9,8 +9,10 @@ import {
 import {
   getAppSettings,
   saveAppSettings,
+  savePageSpeedApiKey,
   saveSlackBotToken,
 } from "../atc/app-settings.server";
+import { pageSpeedKeySource, testPageSpeedKey } from "../atc/speed.server";
 import { parseSlackChannel, slackIdentity, slackTokenSource } from "../atc/slack.server";
 import { MIN_PASSWORD_LENGTH } from "../password-hash.server";
 
@@ -24,6 +26,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     // Only where the token comes from — never the token itself.
     tokenSource,
     identity: tokenSource ? await slackIdentity() : null,
+    pageSpeedKey: await pageSpeedKeySource(),
     passwordSource: await adminPasswordSource(),
     passwordChangedAt: settings.adminPasswordChangedAt?.getTime() ?? null,
     passwordJustChanged: new URL(request.url).searchParams.has("passwordChanged"),
@@ -72,6 +75,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
+  if (intent === "save-psi-key") {
+    const key = String(form.get("pageSpeedApiKey") ?? "").trim();
+    if (!key) return result({ error: "Paste the API key first." });
+    const error = await testPageSpeedKey(key);
+    if (error) return result({ error: `Google rejected this key: ${error}` });
+    await savePageSpeedApiKey(key);
+    return result({ message: "PageSpeed API key saved." });
+  }
+
+  if (intent === "clear-psi-key") {
+    await savePageSpeedApiKey(null);
+    return result({ message: "Saved API key removed." });
+  }
+
   if (intent === "change-password") {
     const error = await changeAdminPassword(
       String(form.get("currentPassword") ?? ""),
@@ -94,6 +111,7 @@ export default function Settings() {
     deptHeadSlackChannel,
     tokenSource,
     identity,
+    pageSpeedKey,
     passwordSource,
     passwordChangedAt,
     passwordJustChanged,
@@ -206,6 +224,55 @@ export default function Settings() {
             </s-stack>
           </s-stack>
         </Form>
+      </s-section>
+
+      <s-section heading="Google PageSpeed">
+        <s-stack direction="block" gap="base">
+          <s-stack direction="inline" gap="small-200" alignItems="center">
+            <s-text>API key:</s-text>
+            <s-badge tone={pageSpeedKey ? "success" : "neutral"}>
+              {pageSpeedKey ? "Saved" : "Not set"}
+            </s-badge>
+            {pageSpeedKey === "env" && (
+              <s-text color="subdued">from the PAGESPEED_API_KEY environment variable</s-text>
+            )}
+          </s-stack>
+          <s-paragraph>
+            <s-text color="subdued">
+              Speed tests use Google PageSpeed Insights. Without a key Google allows only a few tests
+              a day. To get a free key: console.cloud.google.com → create or pick a project → APIs
+              &amp; Services → enable &quot;PageSpeed Insights API&quot; → Credentials → Create
+              credentials → API key (restrict it to the PageSpeed Insights API).
+            </s-text>
+          </s-paragraph>
+          <Form method="post">
+            <input type="hidden" name="intent" value="save-psi-key" />
+            <s-stack direction="block" gap="base">
+              <s-password-field
+                label={pageSpeedKey === "settings" ? "Replace API key" : "API key"}
+                name="pageSpeedApiKey"
+                details="Tested with Google before saving and never shown again."
+              />
+              {feedback("save-psi-key")}
+              <s-stack direction="inline" gap="base">
+                <s-button type="submit" {...(busy("save-psi-key") ? { loading: true } : {})}>
+                  Save API key
+                </s-button>
+              </s-stack>
+            </s-stack>
+          </Form>
+          {pageSpeedKey === "settings" && (
+            <Form method="post">
+              <input type="hidden" name="intent" value="clear-psi-key" />
+              <s-stack direction="inline" gap="base">
+                <s-button type="submit" tone="critical" variant="tertiary">
+                  Remove saved key
+                </s-button>
+              </s-stack>
+            </Form>
+          )}
+          {result?.intent === "clear-psi-key" && feedback("clear-psi-key")}
+        </s-stack>
       </s-section>
 
       <s-section heading="Admin password">

@@ -88,14 +88,22 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
     warning you get before checks start skipping.
   - *Schedule* — **Routine** (daily / weekly / monthly) and **How often** (once / twice) with a
     start time in Eastern time. Twice spreads the runs evenly: daily 9 AM and 9 PM, weekly Monday
-    and Thursday, monthly the 1st and 15th. Each scheduled check runs desktop + mobile and posts
-    its report to every Slack channel set for the store. The Stores list shows each schedule and
+    and Thursday, monthly the 1st and 15th. Each scheduled run does a flow check (desktop + mobile)
+    and a speed test, then posts one report covering both to every Slack channel set for the store. The Stores list shows each schedule and
     its next run; scheduled checks are tagged **Scheduled** in Recent checks. A run missed while
     the server was down happens once when it's back.
   - *Storefront password* — only while the store is password protected. Never sent back to the
     browser — only whether one is stored.
   - *Delete store* — removes it with all of its check history and screenshots.
 
+- **Run speed test** — the **Speed** tab. Google PageSpeed Insights measures the homepage, a
+  collection (`/collections/all`, or the store's chosen one) and a product page (the first saved
+  product, else the store's top in-stock best seller, found in a real browser each time), each on mobile and desktop. Each gets Google's
+  performance score (90+ GOOD, 50–89 AVERAGE, under 50 POOR), its main timings and a link to
+  Google's full report. An alert is raised when a page turns POOR or drops 10+ points since the
+  previous test. Results are kept as history, and have their own **Send to Slack**. Needs a
+  PageSpeed API key (Settings). Password-protected stores can't be measured — Google can't get
+  past the password, and the result says so.
 - **Send to Slack** — on every finished check; one report covers both desktop and mobile. Tick the client, PDC and/or department-head
   channel, optionally **Preview message**, then **Send report**. The report lists the result, the
   product tested, the time (EST) and every failed or warning step with its reason; screenshots of
@@ -108,6 +116,8 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
     it belongs to. With no token saved here, the `SLACK_BOT_TOKEN` environment variable is used.
   - *Slack channels* — the PDC and department-head channel IDs, which receive every store's
     report. Invite the bot to each channel; a channel's ID is at the bottom of its details panel.
+  - *Google PageSpeed* — the PageSpeed Insights API key used by speed tests (tested with Google
+    before saving, never shown again). Falls back to the `PAGESPEED_API_KEY` env var.
   - *Admin password* — change it here (current password + new one twice, at least 10
     characters). It's stored as an scrypt hash. Until it's changed here, `ADMIN_PASSWORD` is the
     password. Changing it signs out everyone else. Forgotten it? On the server:
@@ -298,6 +308,9 @@ app/atc/app-settings.server.ts   global settings (PDC / department-head Slack ch
 app/atc/slack.server.ts     Slack API: bot identity, posting, screenshot uploads, channel ID validation
 app/atc/report.server.ts    builds a run's Slack report and sends it; records every send (SlackDelivery)
 app/atc/checks/product-pick.server.ts   picks the product to test (saved pool or best sellers)
+app/atc/speed.server.ts     speed tests via Google PageSpeed Insights; history + alerts
+app/atc/speed.ts            speed result shapes and rating rules (shared with the UI)
+app/components/SpeedDetail.tsx   the Speed tab: results table, history, Send to Slack
 app/atc/schedule.ts         schedule maths (next run, Eastern time + daylight saving) — pure
 app/atc/scheduler.server.ts once-a-minute scheduler: starts due checks, posts reports to Slack
 app/atc/retention.server.ts deletes screenshots older than the retention period (daily)
@@ -317,7 +330,7 @@ app/routes/api.runs.$id.tsx polled for live progress
 app/routes/api.checks.$id.tsx       polled for a check's live progress (desktop + mobile)
 app/routes/api.checks.$id_.slack.tsx   Slack channels, preview and send for one check
 scripts/atc-check.mjs       the same engine from the terminal
-prisma/schema.prisma        Store (config) + AppSetting (global) + FlowRun (history) + SlackDelivery (audit)
+prisma/schema.prisma        Store (config) + AppSetting (global) + FlowRun + SpeedRun (history) + SlackDelivery (audit)
 ```
 
 `checker.server.ts` is imported by both the app and the CLI script. The CLI loads it as a raw `.ts`

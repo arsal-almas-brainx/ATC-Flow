@@ -33,6 +33,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       discountCode: store.discountCode ?? "",
       searchQuery: store.searchQuery ?? "",
       slackChannel: store.slackChannel ?? "",
+      speedCollectionUrl: store.speedCollectionUrl ?? "",
     },
     // Never send secret values back to the browser — only their status.
     passwordSaved: store.storefrontPassword !== null,
@@ -62,6 +63,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       discountCode: String(form.get("discountCode") ?? ""),
       searchQuery: String(form.get("searchQuery") ?? ""),
       slackChannel: String(form.get("slackChannel") ?? ""),
+      speedCollectionUrl: String(form.get("speedCollectionUrl") ?? ""),
     });
     if ("error" in result) return { detailsError: result.error };
     await updateStore(store.id, result.data);
@@ -221,6 +223,13 @@ export default function StoreSettings() {
               value={store.slackChannel}
               placeholder="C0123ABCD"
               details="This client's reports go here, alongside the PDC and department-head channels set in Settings. In Slack: channel details → Channel ID at the bottom."
+            />
+            <s-text-field
+              label="Speed test collection URL (optional)"
+              name="speedCollectionUrl"
+              value={store.speedCollectionUrl}
+              placeholder={`${store.url}/collections/all`}
+              details="The collection page the speed test measures. Leave blank for all products (/collections/all)."
             />
             {detailsError && (
               <s-banner tone="critical">

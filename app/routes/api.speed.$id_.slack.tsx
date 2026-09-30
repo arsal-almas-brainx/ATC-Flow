@@ -1,28 +1,25 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { requireAdmin } from "../auth.server";
 import prisma from "../db.server";
-import { getCheck } from "../atc/store.server";
+import { getSpeedRun } from "../atc/speed.server";
 import {
   AUDIENCES,
-  buildCheckReport,
+  buildSpeedReport,
   listDeliveries,
   previewText,
-  sendCheckReport,
+  sendSpeedReport,
   slackTargets,
   type Audience,
 } from "../atc/report.server";
 import { slackBotConfigured } from "../atc/slack.server";
 
-/** Channels, a plain-text preview of the report, and past sends for one check. */
+/** Channels, a plain-text preview of the report, and past sends for one speed test. */
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   await requireAdmin(request);
-  const check = await getCheck(String(params.id));
-  const store = check
-    ? await prisma.store.findUnique({ where: { id: check.runs[0].storeId } })
-    : null;
-  if (!check || !store) throw new Response("Not found", { status: 404 });
+  const speed = await getSpeedRun(String(params.id));
+  const store = speed ? await prisma.store.findUnique({ where: { id: speed.storeId } }) : null;
+  if (!speed || !store) throw new Response("Not found", { status: 404 });
 
-  const { blocks } = buildCheckReport(check, store);
   return {
     botConfigured: await slackBotConfigured(),
     targets: (await slackTargets(store)).map((t) => ({
@@ -30,8 +27,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       label: t.label,
       configured: Boolean(t.channel),
     })),
-    preview: previewText(blocks),
-    deliveries: await listDeliveries(check),
+    preview: previewText(buildSpeedReport(speed, store).blocks),
+    deliveries: await listDeliveries({ speedRunId: speed.id }),
   };
 };
 
@@ -42,5 +39,5 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     .getAll("audience")
     .map(String)
     .filter((a): a is Audience => (AUDIENCES as readonly string[]).includes(a));
-  return sendCheckReport(String(params.id), audiences);
+  return sendSpeedReport(String(params.id), audiences);
 };

@@ -5,11 +5,13 @@ import { startCheck } from "./store.server";
 import { runOptionsFor } from "./stores.server";
 import { AUDIENCES, sendCheckReport, slackTargets } from "./report.server";
 import { slackBotConfigured } from "./slack.server";
+import { startSpeedRun } from "./speed.server";
 
 /**
  * Runs scheduled checks. Once a minute, any store whose `nextRunAt` has
- * passed gets a check (desktop + mobile), and its report is posted to every
- * configured Slack channel when it finishes. `nextRunAt` is moved on before
+ * passed gets a flow check (desktop + mobile) and a speed test, and one
+ * report covering both is posted to every configured Slack channel when they
+ * finish. `nextRunAt` is moved on before
  * the check starts, so a slow check or a restart never runs it twice.
  *
  * A time missed while the server was down runs once when it comes back, then
@@ -48,19 +50,31 @@ export async function runDueChecks(now = new Date()): Promise<number> {
       where: { id: store.id },
       data: { lastScheduledAt: now, nextRunAt: nextRunAfter(scheduleOf(store), now) },
     });
-    startCheck({ ...runOptionsFor(store), trigger: "schedule" }, (checkId) => {
-      void postScheduledReport(store, checkId);
+    // Flow check and speed test together; one report once both are back.
+    const flowDone = new Promise<string>((resolve) => {
+      startCheck({ ...runOptionsFor(store), trigger: "schedule" }, resolve);
     });
-    console.log(`[scheduler] started a scheduled check for ${store.name}`);
+    const speed = await startSpeedRun(store, "schedule").catch((err) => {
+      console.error(`[scheduler] couldn't start ${store.name}'s speed test`, err);
+      return null;
+    });
+    void Promise.all([flowDone, speed?.done]).then(([checkId]) =>
+      postScheduledReport(store, checkId, speed?.id),
+    );
+    console.log(`[scheduler] started a scheduled check and speed test for ${store.name}`);
   }
   return due.length;
 }
 
-async function postScheduledReport(store: Store, checkId: string) {
+async function postScheduledReport(store: Store, checkId: string, speedRunId?: string) {
   if (!(await slackBotConfigured())) return;
   const audiences = (await slackTargets(store)).filter((t) => t.channel).map((t) => t.audience);
   if (audiences.length === 0) return;
-  const result = await sendCheckReport(checkId, audiences.filter((a) => AUDIENCES.includes(a)));
+  const result = await sendCheckReport(
+    checkId,
+    audiences.filter((a) => AUDIENCES.includes(a)),
+    { speedRunId },
+  );
   if ("error" in result) {
     console.error(`[scheduler] couldn't post ${store.name}'s report: ${result.error}`);
   } else {

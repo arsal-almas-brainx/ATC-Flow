@@ -37,7 +37,7 @@ export function CheckDetail({ check }: { check: Check }) {
             </s-stack>
           )}
           {settled ? (
-            <SlackSend key={check.id} checkId={check.id} />
+            <SlackSend key={check.id} endpoint={`/api/checks/${check.id}/slack`} />
           ) : (
             <s-text color="subdued">Send to Slack becomes available when both checks finish.</s-text>
           )}
