@@ -16,6 +16,7 @@ import {
   checkCartDiscount,
 } from "./checks/cart.server.ts";
 import { checkCheckoutReached } from "./checks/checkout.server.ts";
+import { checkCartDrawer } from "./checks/drawer.server.ts";
 import { checkCollectionListing } from "./checks/collection.server.ts";
 import { saveScreenshot } from "./browser/screenshots.server.ts";
 import { pickProduct } from "./checks/product-pick.server.ts";
@@ -51,6 +52,7 @@ const STEP_PLAN: Array<[key: string, title: string, layer: RunStep["layer"]]> = 
   ["search-results", "Search finds the product", "discovery"],
   ["product-quantity", "Product page quantity selector works", "cart"],
   ["add-to-cart", "The real Add-to-cart button works", "cart"],
+  ["cart-drawer", "Cart drawer shows the added item", "cart"],
   ["cart-page", "Cart page shows the added item", "cart"],
   ["cart-quantity-update", "Cart quantity can be increased and decreased", "cart"],
   ["cart-discount", "Discount code applies correctly", "cart"],
@@ -98,7 +100,7 @@ export async function runCheck(
 
   // Nothing here can run at all without a Web Bot Auth signature — mark the
   // whole run skipped up front instead of repeating the same explanation on
-  // eleven separate steps.
+  // twelve separate steps.
   if (!webBotAuth) {
     run.status = "skipped";
     run.error =
@@ -225,6 +227,10 @@ export async function runCheck(
 
       await step("add-to-cart", () =>
         checkAddToCart(page, origin, productUrl, variantId, productTitle || handle, quantity),
+      );
+
+      await stepIsolated("cart-drawer", () =>
+        checkCartDrawer(page, origin, productTitle, handle),
       );
 
       await stepIsolated("cart-page", async () => {

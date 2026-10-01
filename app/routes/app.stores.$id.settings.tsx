@@ -12,8 +12,15 @@ import {
   validateStoreInput,
 } from "../atc/stores.server";
 import { describeWebBotAuthStatus } from "../atc/web-bot-auth.server";
-import { refreshNextRun, scheduleOf } from "../atc/scheduler.server";
-import { describeSchedule, formatEastern, parseTime } from "../atc/schedule";
+import { parseScheduleForm, refreshNextRun, scheduleOf } from "../atc/scheduler.server";
+import { describeSchedule, formatEastern } from "../atc/schedule";
+import {
+  ScheduleFields,
+  StoreDetailsFields,
+  StorefrontPasswordField,
+  WebBotAuthFields,
+  detailsFromForm,
+} from "../components/StoreFields";
 
 async function loadStore(id: string | undefined) {
   const store = id ? await getStore(id) : null;
@@ -56,37 +63,16 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const intent = String(form.get("intent") ?? "");
 
   if (intent === "save-details") {
-    const result = validateStoreInput({
-      name: String(form.get("name") ?? ""),
-      url: String(form.get("url") ?? ""),
-      productUrls: String(form.get("productUrls") ?? ""),
-      discountCode: String(form.get("discountCode") ?? ""),
-      searchQuery: String(form.get("searchQuery") ?? ""),
-      slackChannel: String(form.get("slackChannel") ?? ""),
-      speedCollectionUrl: String(form.get("speedCollectionUrl") ?? ""),
-    });
+    const result = validateStoreInput(detailsFromForm(form));
     if ("error" in result) return { detailsError: result.error };
     await updateStore(store.id, result.data);
     return { detailsSavedMessage: "Store details saved." };
   }
 
   if (intent === "save-schedule") {
-    const period = String(form.get("period") ?? "day");
-    const frequency = Number(form.get("frequency") ?? 1);
-    const time = String(form.get("time") ?? "").trim();
-    if (!["day", "week", "month"].includes(period)) return { scheduleError: "Pick a period." };
-    if (![1, 2].includes(frequency)) return { scheduleError: "Pick once or twice." };
-    const parsed = parseTime(time);
-    if (!parsed) return { scheduleError: "Time must be 24-hour HH:MM, e.g. 09:00 or 21:30." };
-    await prisma.store.update({
-      where: { id: store.id },
-      data: {
-        scheduleEnabled: form.get("enabled") === "on",
-        schedulePeriod: period,
-        scheduleFrequency: frequency,
-        scheduleTime: `${String(parsed.h).padStart(2, "0")}:${String(parsed.m).padStart(2, "0")}`,
-      },
-    });
+    const parsed = parseScheduleForm(form);
+    if ("error" in parsed) return { scheduleError: parsed.error };
+    await prisma.store.update({ where: { id: store.id }, data: parsed.data });
     await refreshNextRun(store.id);
     return { scheduleSavedMessage: "Schedule saved." };
   }
@@ -196,41 +182,7 @@ export default function StoreSettings() {
         <form ref={detailsFormRef} onSubmit={(e) => e.preventDefault()}>
           <input type="hidden" name="intent" value="save-details" />
           <s-stack direction="block" gap="base">
-            <s-text-field label="Name" name="name" value={store.name} />
-            <s-url-field label="Store URL" name="url" value={store.url} />
-            <s-text-area
-              label="Product URLs (optional)"
-              name="productUrls"
-              rows={4}
-              value={store.productUrls}
-              details="Optional, one per line. Each run tests one of these at random. Leave blank to pick an in-stock best seller automatically."
-            />
-            <s-text-field
-              label="Discount code (optional)"
-              name="discountCode"
-              value={store.discountCode}
-              details="Applied on every check. Leave blank to skip the discount check."
-            />
-            <s-text-field
-              label="Search query (optional)"
-              name="searchQuery"
-              value={store.searchQuery}
-              details="Typed into the store's search. Leave blank to search for the tested product's name."
-            />
-            <s-text-field
-              label="Client Slack channel ID (optional)"
-              name="slackChannel"
-              value={store.slackChannel}
-              placeholder="C0123ABCD"
-              details="This client's reports go here, alongside the PDC and department-head channels set in Settings. In Slack: channel details → Channel ID at the bottom."
-            />
-            <s-text-field
-              label="Speed test collection URL (optional)"
-              name="speedCollectionUrl"
-              value={store.speedCollectionUrl}
-              placeholder={`${store.url}/collections/all`}
-              details="The collection page the speed test measures. Leave blank for all products (/collections/all)."
-            />
+            <StoreDetailsFields values={store} />
             {detailsError && (
               <s-banner tone="critical">
                 <s-paragraph>{detailsError}</s-paragraph>
@@ -272,31 +224,7 @@ export default function StoreSettings() {
               </s-paragraph>
             )}
 
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-              <input type="checkbox" name="enabled" defaultChecked={schedule.enabled} />
-              Run checks on a schedule
-            </label>
-            <s-stack direction="inline" gap="base">
-              <s-select label="Routine" name="period" value={schedule.period}>
-                <s-option value="day">Daily</s-option>
-                <s-option value="week">Weekly</s-option>
-                <s-option value="month">Monthly</s-option>
-              </s-select>
-              <s-select label="How often" name="frequency" value={schedule.frequency}>
-                <s-option value="1">Once</s-option>
-                <s-option value="2">Twice</s-option>
-              </s-select>
-              <s-text-field
-                label="Start time (EST, 24h)"
-                name="time"
-                value={schedule.time}
-                placeholder="09:00"
-              />
-            </s-stack>
-            <s-text color="subdued">
-              Runs are spread evenly: twice a day at 09:00 is 9 AM and 9 PM; twice a week is Monday
-              and Thursday; twice a month is the 1st and 15th.
-            </s-text>
+            <ScheduleFields values={schedule} />
             {scheduleError && (
               <s-banner tone="critical">
                 <s-paragraph>{scheduleError}</s-paragraph>
@@ -336,11 +264,7 @@ export default function StoreSettings() {
           <form ref={passwordFormRef} onSubmit={(e) => e.preventDefault()}>
             <input type="hidden" name="intent" value="save-password" />
             <s-stack direction="block" gap="base">
-              <s-password-field
-                label="Storefront password"
-                name="storefrontPassword"
-                details="Leave blank and save to clear the stored password."
-              />
+              <StorefrontPasswordField saved={passwordSaved} />
               <s-stack direction="inline" gap="base">
                 <s-button
                   onClick={() => submit(passwordSaver, passwordFormRef)}
@@ -366,13 +290,6 @@ export default function StoreSettings() {
             <s-badge tone={wbaBadge.tone}>{wbaBadge.label}</s-badge>
           </s-stack>
 
-          <s-paragraph>
-            Authorizes a real Chromium browser to click the theme&apos;s actual Add-to-cart
-            button, past Shopify&apos;s bot protection. Create a signature in the store&apos;s
-            Shopify Admin → Online Store → Preferences → Crawler access, then paste its values
-            below. There is no API to create or renew one — it expires after at most 3 months.
-          </s-paragraph>
-
           {showWbaBanner && (
             <s-banner tone={webBotAuth.expired ? "critical" : "warning"} heading={wbaBadge.label}>
               <s-paragraph>
@@ -388,18 +305,7 @@ export default function StoreSettings() {
           <form ref={wbaFormRef} onSubmit={(e) => e.preventDefault()}>
             <input type="hidden" name="intent" value="save-web-bot-auth" />
             <s-stack direction="block" gap="base">
-              <s-password-field label="Signature" name="signature" details="From Shopify Admin's Crawler access page." />
-              <s-password-field
-                label="Signature-Input"
-                name="signatureInput"
-                details="From the same page, alongside Signature."
-              />
-              <s-date-field
-                label="Expires"
-                name="expiresAt"
-                value={expiresDefault}
-                details="The expiry date Shopify Admin showed for this signature."
-              />
+              <WebBotAuthFields expires={expiresDefault} />
               <s-stack direction="inline" gap="base">
                 <s-button
                   onClick={() => submit(wbaSaver, wbaFormRef)}

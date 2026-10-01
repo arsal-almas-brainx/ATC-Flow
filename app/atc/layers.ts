@@ -25,7 +25,8 @@ export const LAYERS: LayerInfo[] = [
   {
     key: "cart",
     title: "Cart",
-    blurb: "Does adding to cart, changing quantity, and applying a discount actually work?",
+    blurb:
+      "Does adding to cart work, does the cart drawer show the item, and do changing quantity and applying a discount work?",
   },
   {
     key: "checkout",

@@ -1,6 +1,6 @@
 import type { Store } from "@prisma/client";
 import prisma from "../db.server";
-import { nextRunAfter, type Schedule, type SchedulePeriod } from "./schedule";
+import { nextRunAfter, parseTime, type Schedule, type SchedulePeriod } from "./schedule";
 import { startCheck } from "./store.server";
 import { runOptionsFor } from "./stores.server";
 import { AUDIENCES, sendCheckReport, slackTargets } from "./report.server";
@@ -97,4 +97,31 @@ export function startScheduler() {
   setTimeout(tick, 10_000).unref?.();
   global.atcSchedulerTimer = setInterval(tick, TICK_MS);
   global.atcSchedulerTimer.unref?.();
+}
+
+/** Validates the schedule fields of a store form (Add store and store settings). */
+export function parseScheduleForm(form: FormData):
+  | { error: string }
+  | {
+      data: {
+        scheduleEnabled: boolean;
+        schedulePeriod: string;
+        scheduleFrequency: number;
+        scheduleTime: string;
+      };
+    } {
+  const period = String(form.get("period") ?? "day");
+  const frequency = Number(form.get("frequency") ?? 1);
+  const parsed = parseTime(String(form.get("time") ?? "").trim());
+  if (!["day", "week", "month"].includes(period)) return { error: "Pick a routine." };
+  if (![1, 2].includes(frequency)) return { error: "Pick once or twice." };
+  if (!parsed) return { error: "Start time must be 24-hour HH:MM, e.g. 09:00 or 21:30." };
+  return {
+    data: {
+      scheduleEnabled: form.get("enabled") === "on",
+      schedulePeriod: period,
+      scheduleFrequency: frequency,
+      scheduleTime: `${String(parsed.h).padStart(2, "0")}:${String(parsed.m).padStart(2, "0")}`,
+    },
+  };
 }

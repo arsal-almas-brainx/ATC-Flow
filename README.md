@@ -3,9 +3,10 @@
 A standalone super admin that tests client stores' **add-to-cart → checkout** flow the way a QA
 person would: with a real, headless Chromium browser doing exactly what a real visitor does. Press
 **Run check** and it loads your homepage, picks an in-stock product from the best sellers, loads its product page, searches for the product, uses the
-product page's quantity selector, clicks the real Add-to-cart button, looks at the cart, raises and
+product page's quantity selector, clicks the real Add-to-cart button, checks the cart drawer
+(opened by itself or from the cart icon, with its quantity buttons), looks at the cart, raises and
 lowers its quantity, applies a discount code, clicks
-through to checkout, and confirms the product is listed on a collection — eleven checks, one
+through to checkout, and confirms the product is listed on a collection — twelve checks, one
 continuous browser session, one shopper's one visit.
 
 | Layer | What it proves |
@@ -282,7 +283,7 @@ browser makes to the store's own origin (and, best-effort, to Shopify's checkout
 `context.route()` rather than applied globally, so third-party requests the theme's own JS fires
 (analytics, payment SDKs) never see the credential.
 
-Each of the eleven checks lives in its own file under `app/atc/checks/`, and reads the page the same
+Each of the twelve checks lives in its own file under `app/atc/checks/`, and reads the page the same
 way a person would: the add-to-cart form's own `id` field for which variant is selected, `<h1>` for
 the product title used to search, `/cart.js` (the same JSON the theme's own cart drawer reads) to
 confirm quantities and totals, a breadcrumb link for which collection to check. The first three
@@ -299,7 +300,7 @@ automated traffic regardless of authorization.
 ## Layout
 
 ```
-app/atc/checker.server.ts   the 11 checks — the whole engine, one continuous browser session
+app/atc/checker.server.ts   the 12 checks — the whole engine, one continuous browser session
 app/atc/checks/             one file per journey stage: storefront, search, cart, checkout, collection
 app/atc/browser/            Chromium lifecycle, Web Bot Auth headers, challenge detection, screenshots
 app/atc/store.server.ts     starts runs, keeps live progress in memory, persists to SQLite

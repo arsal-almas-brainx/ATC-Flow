@@ -1,22 +1,10 @@
-import { useState } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import {
-  Form,
-  Link,
-  redirect,
-  useActionData,
-  useLoaderData,
-  useNavigation,
-} from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { requireAdmin } from "../auth.server";
 import { listChecks } from "../atc/store.server";
 import { scheduleOf } from "../atc/scheduler.server";
 import { describeSchedule, formatEastern } from "../atc/schedule";
-import {
-  createStore,
-  listStores,
-  validateStoreInput,
-} from "../atc/stores.server";
+import { listStores } from "../atc/stores.server";
 import { describeWebBotAuthStatus } from "../atc/web-bot-auth.server";
 import { StatusBadge } from "../components/StatusBadge";
 import type { RunStatus } from "../atc/types";
@@ -48,40 +36,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  await requireAdmin(request);
-  const form = await request.formData();
-  const result = validateStoreInput({
-    name: String(form.get("name") ?? ""),
-    url: String(form.get("url") ?? ""),
-    productUrls: String(form.get("productUrls") ?? ""),
-    discountCode: "",
-  });
-  if ("error" in result) return { error: result.error };
-  const store = await createStore(result.data);
-  return redirect(`/app/stores/${store.id}/settings`);
-};
-
 export default function Stores() {
   const { stores } = useLoaderData<typeof loader>();
-  const result = useActionData<typeof action>();
-  const busy = useNavigation().state === "submitting";
-  const [adding, setAdding] = useState(false);
-  // With no stores yet, the form is the only thing to do here.
-  const showForm = adding || stores.length === 0;
 
   return (
     <s-page heading="Stores">
       <s-section heading={`Stores (${stores.length})`}>
-        {!showForm && (
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-            <s-button variant="primary" icon="plus" onClick={() => setAdding(true)}>
-              Add store
-            </s-button>
-          </div>
-        )}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: 12,
+          }}
+        >
+          <s-button variant="primary" icon="plus" href="/app/stores/new">
+            Add store
+          </s-button>
+        </div>
         {stores.length === 0 ? (
-          <s-paragraph>No stores yet. Add one below.</s-paragraph>
+          <s-paragraph>
+            No stores yet — press Add store to set one up.
+          </s-paragraph>
         ) : (
           <s-table>
             <s-table-header-row>
@@ -156,50 +131,6 @@ export default function Stores() {
           </s-table>
         )}
       </s-section>
-
-      {showForm && (
-        <s-section heading="Add a store">
-          <Form method="post">
-            <s-stack direction="block" gap="base">
-              <s-text-field
-                label="Name"
-                name="name"
-                placeholder="Wonderfold EU"
-              />
-              <s-url-field
-                label="Store URL"
-                name="url"
-                placeholder="https://example.com"
-              />
-              <s-text-area
-                label="Product URLs (optional)"
-                name="productUrls"
-                rows={3}
-                details="Optional, one per line. Each run tests one of these at random. Leave blank to pick an in-stock best seller automatically."
-              />
-              {result?.error && (
-                <s-banner tone="critical">
-                  <s-paragraph>{result.error}</s-paragraph>
-                </s-banner>
-              )}
-              <s-stack direction="inline" gap="base">
-                <s-button
-                  type="submit"
-                  variant="primary"
-                  {...(busy ? { loading: true } : {})}
-                >
-                  Add store
-                </s-button>
-                {stores.length > 0 && (
-                  <s-button variant="tertiary" onClick={() => setAdding(false)}>
-                    Cancel
-                  </s-button>
-                )}
-              </s-stack>
-            </s-stack>
-          </Form>
-        </s-section>
-      )}
     </s-page>
   );
 }

@@ -9,10 +9,10 @@ import { readCart, type CartJson } from "../browser/cart.server.ts";
  * name nothing — accessible labels ("button-plus", "Increase quantity",
  * "Quantity for …"). `:visible` skips hidden templates and closed drawers.
  */
-const PLUS =
+export const PLUS =
   'button[name="plus"]:visible, [data-quantity-increase]:visible, ' +
   'button[aria-label*="plus" i]:visible, button[aria-label*="increase" i]:visible';
-const MINUS =
+export const MINUS =
   'button[name="minus"]:visible, [data-quantity-decrease]:visible, ' +
   'button[aria-label*="minus" i]:visible, button[aria-label*="decrease" i]:visible';
 const PRODUCT_QTY_INPUT =
@@ -357,7 +357,7 @@ function lineQuantity(cart: CartJson | null, variantId: string): number {
   return line?.quantity ?? 0;
 }
 
-async function waitForItemCount(
+export async function waitForItemCount(
   page: Page,
   origin: string,
   target: number,

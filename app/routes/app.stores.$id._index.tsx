@@ -191,8 +191,8 @@ export default function StoreDashboard() {
           <s-paragraph>
             This uses a real browser to test <s-text>{store.url}</s-text> exactly like a
             real visitor would: it loads the homepage and product page, searches for the
-            product, clicks the real Add-to-cart button, checks the cart, changes its
-            quantity, applies a discount code, and clicks through to checkout. It stops
+            product, clicks the real Add-to-cart button, checks the cart drawer and the cart,
+            changes its quantity, applies a discount code, and clicks through to checkout. It stops
             there: <s-text type="strong">no order is placed and no payment is taken</s-text>.
           </s-paragraph>
 
