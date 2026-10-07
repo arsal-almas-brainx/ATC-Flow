@@ -15,6 +15,7 @@ export type StoreInput = {
   discountCode?: string;
   searchQuery?: string;
   slackChannel?: string;
+  internalSlackChannel?: string;
   speedCollectionUrl?: string;
 };
 
@@ -25,6 +26,7 @@ export type StoreData = {
   discountCode: string | null;
   searchQuery: string | null;
   slackChannel: string | null;
+  internalSlackChannel: string | null;
   speedCollectionUrl: string | null;
 };
 
@@ -76,8 +78,10 @@ export function validateStoreInput(
     }
   }
 
-  const slack = parseSlackChannel(input.slackChannel ?? "", "Client Slack channel");
+  const slack = parseSlackChannel(input.slackChannel ?? "", "Client (external) Slack channel");
   if ("error" in slack) return { error: slack.error };
+  const internal = parseSlackChannel(input.internalSlackChannel ?? "", "Internal Slack channel");
+  if ("error" in internal) return { error: internal.error };
 
   const collection = input.speedCollectionUrl?.trim() || null;
   if (collection) {
@@ -100,6 +104,7 @@ export function validateStoreInput(
       discountCode: input.discountCode?.trim() || null,
       searchQuery: input.searchQuery?.trim() || null,
       slackChannel: slack.value,
+      internalSlackChannel: internal.value,
       speedCollectionUrl: collection,
     },
   };

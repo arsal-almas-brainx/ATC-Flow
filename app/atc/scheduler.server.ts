@@ -66,8 +66,11 @@ export async function runDueChecks(now = new Date()): Promise<number> {
   return due.length;
 }
 
-async function postScheduledReport(store: Store, checkId: string, speedRunId?: string) {
+async function postScheduledReport(started: Store, checkId: string, speedRunId?: string) {
   if (!(await slackBotConfigured())) return;
+  // Re-read the store: its channels may have changed while the check ran.
+  const store = await prisma.store.findUnique({ where: { id: started.id } });
+  if (!store) return;
   const audiences = (await slackTargets(store)).filter((t) => t.channel).map((t) => t.audience);
   if (audiences.length === 0) return;
   const result = await sendCheckReport(

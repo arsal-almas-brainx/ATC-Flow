@@ -40,6 +40,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       discountCode: store.discountCode ?? "",
       searchQuery: store.searchQuery ?? "",
       slackChannel: store.slackChannel ?? "",
+      internalSlackChannel: store.internalSlackChannel ?? "",
       speedCollectionUrl: store.speedCollectionUrl ?? "",
     },
     // Never send secret values back to the browser — only their status.

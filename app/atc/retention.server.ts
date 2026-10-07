@@ -8,7 +8,7 @@ import type { RunStep } from "./types.ts";
  * Data retention. Every check's results and every Slack send are kept for
  * good — they are the audit history. Only screenshots, which are what
  * actually takes up disk space, are deleted once they are older than
- * SCREENSHOT_RETENTION_DAYS (default 30). A step whose screenshot was removed
+ * SCREENSHOT_RETENTION_DAYS (default 5). A step whose screenshot was removed
  * is marked so the report can say so.
  */
 
@@ -16,7 +16,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function retentionDays(): number {
   const days = Number(process.env.SCREENSHOT_RETENTION_DAYS);
-  return Number.isFinite(days) && days > 0 ? days : 30;
+  return Number.isFinite(days) && days > 0 ? days : 5;
 }
 
 export async function pruneScreenshots(now = Date.now()): Promise<{ runs: number; files: number }> {

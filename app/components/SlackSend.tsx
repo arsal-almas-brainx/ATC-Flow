@@ -35,7 +35,10 @@ export function SlackSend({ endpoint }: { endpoint: string }) {
   const data = info.data;
   if (!data) return null;
 
-  const configured = data.targets.filter((t) => t.configured).map((t) => t.audience);
+  // The client channel is opt-in: a report reaches a client only when ticked on purpose.
+  const configured = data.targets
+    .filter((t) => t.configured && t.audience !== "client")
+    .map((t) => t.audience);
   const chosen = selected ?? configured;
   const toggle = (a: Audience) =>
     setSelected(chosen.includes(a) ? chosen.filter((x) => x !== a) : [...chosen, a]);

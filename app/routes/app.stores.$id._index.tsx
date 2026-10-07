@@ -7,9 +7,9 @@ import { getStore, productUrlList, runOptionsFor } from "../atc/stores.server";
 import { describeWebBotAuthStatus } from "../atc/web-bot-auth.server";
 import { LAYERS } from "../atc/layers";
 import { listSpeedRuns, pageSpeedKeySource, speedUrls, startSpeedRun } from "../atc/speed.server";
-import { PAGE_LABEL, PAGES, type SpeedRunView } from "../atc/speed";
+import type { SpeedRunView } from "../atc/speed";
 import { CheckDetail } from "../components/CheckDetail";
-import { SpeedDetail, SpeedHistory } from "../components/SpeedDetail";
+import { SpeedDetail, SpeedHistory, SpeedMeasuredPanel } from "../components/SpeedDetail";
 import { StatusBadge } from "../components/StatusBadge";
 
 async function loadStore(id: string | undefined) {
@@ -329,27 +329,18 @@ export default function StoreDashboard() {
           {activeSpeed && <SpeedDetail key={activeSpeed.id} speed={activeSpeed} />}
           <SpeedHistory runs={speedRuns} activeId={activeSpeedId} onPick={setPickedSpeedId} />
 
-          <s-section slot="aside" heading="What's measured">
-            <s-stack direction="block" gap="small-200">
-              <s-text color="subdued">
-                Google PageSpeed Insights, on mobile and desktop. Scores: 90+ GOOD, 50–89 AVERAGE,
-                under 50 POOR. An alert is raised when a page turns POOR or drops 10+ points since
-                the previous test.
-              </s-text>
-              {PAGES.map((page) => (
-                <s-stack key={page} direction="block" gap="small-500">
-                  <s-text type="strong">{PAGE_LABEL[page]}</s-text>
-                  <s-text color="subdued">
-                    {page === "product" && products.length === 0
-                      ? "The store's top in-stock best seller, found each time the test runs"
-                      : speedPages[page]
-                        ? new URL(speedPages[page]!).pathname
-                        : "—"}
-                  </s-text>
-                </s-stack>
-              ))}
-            </s-stack>
-          </s-section>
+          <SpeedMeasuredPanel
+            pages={{
+              home: "the homepage (/)",
+              collection: speedPages.collection
+                ? new URL(speedPages.collection).pathname
+                : "/collections/all",
+              product:
+                products.length > 0
+                  ? new URL(products[0]).pathname
+                  : "the store's top in-stock best seller, found each time",
+            }}
+          />
         </>
       )}
     </s-page>

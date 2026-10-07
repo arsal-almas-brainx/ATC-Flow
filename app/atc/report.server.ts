@@ -9,11 +9,12 @@ import type { FlowRun, RunStep } from "./types";
 import { getSpeedRun } from "./speed.server";
 import { PAGE_LABEL, PAGES, type SpeedRunView } from "./speed";
 
-export const AUDIENCES = ["client", "pdc", "dept-head"] as const;
+export const AUDIENCES = ["internal", "client", "pdc", "dept-head"] as const;
 export type Audience = (typeof AUDIENCES)[number];
 
 const AUDIENCE_LABEL: Record<Audience, string> = {
-  client: "Client channel",
+  internal: "Internal channel",
+  client: "Client (external) channel",
   pdc: "PDC channel",
   "dept-head": "Department head channel",
 };
@@ -21,9 +22,12 @@ const AUDIENCE_LABEL: Record<Audience, string> = {
 export type SlackTarget = { audience: Audience; label: string; channel: string | null };
 
 /** Every audience, with its configured channel (null when not set). */
-export async function slackTargets(store: Pick<Store, "slackChannel">): Promise<SlackTarget[]> {
+export async function slackTargets(
+  store: Pick<Store, "slackChannel" | "internalSlackChannel">,
+): Promise<SlackTarget[]> {
   const settings = await getAppSettings();
   const channel: Record<Audience, string | null> = {
+    internal: store.internalSlackChannel,
     client: store.slackChannel,
     pdc: settings.pdcSlackChannel,
     "dept-head": settings.deptHeadSlackChannel,

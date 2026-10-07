@@ -212,7 +212,7 @@ export default function Settings() {
             <s-paragraph>
               <s-text color="subdued">
                 In Slack, open a channel&apos;s details — the Channel ID is at the bottom. Invite the
-                bot to each channel. Each store&apos;s own client channel is set in that
+                bot to each channel. Each store&apos;s internal and client (external) channels are set in that
                 store&apos;s settings.
               </s-text>
             </s-paragraph>

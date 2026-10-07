@@ -11,6 +11,7 @@ export type StoreDetailsValues = {
   discountCode: string;
   searchQuery: string;
   slackChannel: string;
+  internalSlackChannel: string;
   speedCollectionUrl: string;
 };
 
@@ -21,6 +22,7 @@ export const EMPTY_DETAILS: StoreDetailsValues = {
   discountCode: "",
   searchQuery: "",
   slackChannel: "",
+  internalSlackChannel: "",
   speedCollectionUrl: "",
 };
 
@@ -55,11 +57,18 @@ export function StoreDetailsFields({ values }: { values: StoreDetailsValues }) {
         details="Typed into the store's search. Leave blank to search for the tested product's name."
       />
       <s-text-field
-        label="Client Slack channel ID (optional)"
+        label="Internal Slack channel ID (optional)"
+        name="internalSlackChannel"
+        value={values.internalSlackChannel}
+        placeholder="C0123ABCD"
+        details="The team's own channel for this store (e.g. website-name-internal). Reports go here alongside the PDC and department-head channels set in Settings."
+      />
+      <s-text-field
+        label="Client (external) Slack channel ID (optional)"
         name="slackChannel"
         value={values.slackChannel}
         placeholder="C0123ABCD"
-        details="This client's reports go here, alongside the PDC and department-head channels set in Settings. In Slack: channel details → Channel ID at the bottom."
+        details="The channel the client is in (e.g. website-name-external). Leave empty to keep reports internal — scheduled reports go to every channel that's set. In Slack: channel details → Channel ID at the bottom."
       />
       <s-text-field
         label="Speed test collection URL (optional)"
@@ -170,6 +179,7 @@ export function detailsFromForm(form: FormData): StoreDetailsValues {
     discountCode: get("discountCode"),
     searchQuery: get("searchQuery"),
     slackChannel: get("slackChannel"),
+    internalSlackChannel: get("internalSlackChannel"),
     speedCollectionUrl: get("speedCollectionUrl"),
   };
 }

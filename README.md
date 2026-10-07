@@ -82,7 +82,8 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
 - **A store's Settings**
   - *Store details* — name, URL, product URLs, a discount code applied on every check, an
     optional search query (typed into the store's search instead of the product's name — passes
-    when it returns any product), and the client's Slack channel ID.
+    when it returns any product), and the store's internal and client (external) Slack channel IDs. Leave the client channel empty
+    to keep reports internal (e.g. while trialling a store).
   - *Web Bot Auth* — the signature that gets the browser past Cloudflare, created in that store's
     Shopify Admin → Online Store → Preferences → Crawler access. Shows **Not configured / Active /
     Expires in N days / Expired**. There is no API to create or renew one, so the badge is the only
@@ -105,8 +106,8 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
   previous test. Results are kept as history, and have their own **Send to Slack**. Needs a
   PageSpeed API key (Settings). Password-protected stores can't be measured — Google can't get
   past the password, and the result says so.
-- **Send to Slack** — on every finished check; one report covers both desktop and mobile. Tick the client, PDC and/or department-head
-  channel, optionally **Preview message**, then **Send report**. The report lists the result, the
+- **Send to Slack** — on every finished check; one report covers both desktop and mobile. Tick the internal, client (external), PDC and/or department-head
+  channel (the client channel starts unticked, so it's never sent to by accident), optionally **Preview message**, then **Send report**. The report lists the result, the
   product tested, the time (EST) and every failed or warning step with its reason; screenshots of
   those steps are posted in a thread under it. Every send, successful or not, is recorded and
   listed under **Sent**. Set `APP_URL` (e.g. `https://atc-flow-app.fly.dev`) to add a "view the
@@ -128,7 +129,7 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
 ## Data retention
 
 Check results and Slack send records are kept permanently — they are the audit history. Only step
-screenshots are deleted, once they are older than `SCREENSHOT_RETENTION_DAYS` (default 30); the
+screenshots are deleted, once they are older than `SCREENSHOT_RETENTION_DAYS` (default 5 — issues are looked at the same or next day); the
 step then shows "Screenshot removed". The cleanup runs a minute after the server starts and then
 daily ([app/atc/retention.server.ts](app/atc/retention.server.ts)).
 

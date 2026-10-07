@@ -1,4 +1,12 @@
-import { PAGE_LABEL, PAGES, type Rating, type SpeedResult, type SpeedRunView } from "../atc/speed";
+import {
+  ALERT_DROP,
+  PAGE_LABEL,
+  PAGES,
+  type Rating,
+  type SpeedPage,
+  type SpeedResult,
+  type SpeedRunView,
+} from "../atc/speed";
 import { SlackSend } from "./SlackSend";
 
 const TONE: Record<Rating, "success" | "warning" | "critical"> = {
@@ -161,6 +169,60 @@ export function SpeedHistory({
           ))}
         </s-table-body>
       </s-table>
+    </s-section>
+  );
+}
+
+const RATING_BANDS: Array<{ rating: Rating; range: string; meaning: string }> = [
+  { rating: "GOOD", range: "90–100", meaning: "Fast" },
+  { rating: "AVERAGE", range: "50–89", meaning: "Needs improvement" },
+  { rating: "POOR", range: "0–49", meaning: "Slow — worth fixing" },
+];
+
+/**
+ * The Speed Test tab's side panel: which pages are tested, what the ratings
+ * mean, and when an alert is raised — laid out as short lists rather than a
+ * paragraph, with the same rating colours as the results table.
+ */
+export function SpeedMeasuredPanel({ pages }: { pages: Record<SpeedPage, string> }) {
+  return (
+    <s-section slot="aside" heading="What's measured">
+      <s-stack direction="block" gap="base">
+        <s-text color="subdued">
+          Google PageSpeed Insights (pagespeed.web.dev), each page on 📱 mobile and 🖥 desktop.
+        </s-text>
+
+        <s-stack direction="block" gap="small-200">
+          <s-text type="strong">Pages tested</s-text>
+          <s-unordered-list>
+            {PAGES.map((page) => (
+              <s-list-item key={page}>
+                <s-text type="strong">{PAGE_LABEL[page]}</s-text> —{" "}
+                <s-text color="subdued">{pages[page]}</s-text>
+              </s-list-item>
+            ))}
+          </s-unordered-list>
+        </s-stack>
+
+        <s-stack direction="block" gap="small-200">
+          <s-text type="strong">Score ratings</s-text>
+          {RATING_BANDS.map((band) => (
+            <s-stack key={band.rating} direction="inline" gap="small-200" alignItems="center">
+              <s-badge tone={TONE[band.rating]}>{band.rating}</s-badge>
+              <s-text>{band.range}</s-text>
+              <s-text color="subdued">· {band.meaning}</s-text>
+            </s-stack>
+          ))}
+        </s-stack>
+
+        <s-stack direction="block" gap="small-200">
+          <s-text type="strong">⚠️ Alerts are raised when a page</s-text>
+          <s-unordered-list>
+            <s-list-item>turns POOR, or</s-list-item>
+            <s-list-item>drops {ALERT_DROP}+ points since the previous test</s-list-item>
+          </s-unordered-list>
+        </s-stack>
+      </s-stack>
     </s-section>
   );
 }

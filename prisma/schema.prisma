@@ -34,8 +34,13 @@ model Store {
   /// tested product's own title.
   searchQuery String?
 
-  /// Slack channel ID (e.g. C0123ABCD) for this client's reports.
+  /// Slack channel ID (e.g. C0123ABCD) of the client-facing channel
+  /// (website-name-external). Leave empty to keep reports internal.
   slackChannel String?
+
+  /// Slack channel ID of the team's own channel for this store
+  /// (website-name-internal).
+  internalSlackChannel String?
 
   /// Collection page the speed test measures. Null: /collections/all.
   speedCollectionUrl String?
