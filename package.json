@@ -4,8 +4,8 @@
   "scripts": {
     "build": "react-router build",
     "dev": "prisma generate && prisma migrate deploy && node --env-file-if-exists=.env node_modules/@react-router/dev/bin.js dev",
-    "start": "react-router-serve ./build/server/index.js",
-    "docker-start": "prisma migrate deploy && react-router-serve ./build/server/index.js",
+    "start": "node server.mjs",
+    "docker-start": "prisma migrate deploy && node server.mjs",
     "setup": "prisma generate && prisma migrate deploy",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "prisma": "prisma",
@@ -21,9 +21,12 @@
   "dependencies": {
     "@prisma/client": "^6.16.3",
     "@react-router/dev": "^7.12.0",
+    "@react-router/express": "7.18.4",
     "@react-router/fs-routes": "^7.12.0",
     "@react-router/node": "^7.12.0",
     "@react-router/serve": "^7.12.0",
+    "compression": "1.8.2",
+    "express": "4.22.3",
     "playwright": "^1.62.1",
     "prisma": "^6.16.3",
     "react": "^18.3.1",
