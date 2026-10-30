@@ -41,6 +41,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       searchQuery: store.searchQuery ?? "",
       slackChannel: store.slackChannel ?? "",
       internalSlackChannel: store.internalSlackChannel ?? "",
+      pdcSlackRecipients: store.pdcSlackRecipients?.replace(/,/g, ", ") ?? "",
       speedCollectionUrl: store.speedCollectionUrl ?? "",
     },
     // Never send secret values back to the browser — only their status.
@@ -220,8 +221,8 @@ export default function StoreSettings() {
             {schedule.enabled && schedule.nextRunAt && (
               <s-paragraph>
                 Next check: <s-text type="strong">{schedule.nextRunAt} EST</s-text>. Each scheduled
-                check runs on desktop and mobile and posts its report to every Slack channel set
-                for this store.
+                check runs on desktop and mobile and posts its report to every Slack recipient set
+                for this store, plus the department heads / team leads in Settings.
               </s-paragraph>
             )}
 

@@ -6,8 +6,7 @@ export async function getAppSettings() {
   return (
     (await prisma.appSetting.findUnique({ where: { id: ID } })) ?? {
       id: ID,
-      pdcSlackChannel: null,
-      deptHeadSlackChannel: null,
+      deptHeadSlackRecipients: null,
       slackBotToken: null,
       pageSpeedApiKey: null,
       adminPasswordHash: null,
@@ -17,10 +16,7 @@ export async function getAppSettings() {
   );
 }
 
-export function saveAppSettings(data: {
-  pdcSlackChannel: string | null;
-  deptHeadSlackChannel: string | null;
-}) {
+export function saveAppSettings(data: { deptHeadSlackRecipients: string | null }) {
   return prisma.appSetting.upsert({
     where: { id: ID },
     create: { id: ID, ...data },

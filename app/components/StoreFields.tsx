@@ -12,6 +12,7 @@ export type StoreDetailsValues = {
   searchQuery: string;
   slackChannel: string;
   internalSlackChannel: string;
+  pdcSlackRecipients: string;
   speedCollectionUrl: string;
 };
 
@@ -23,6 +24,7 @@ export const EMPTY_DETAILS: StoreDetailsValues = {
   searchQuery: "",
   slackChannel: "",
   internalSlackChannel: "",
+  pdcSlackRecipients: "",
   speedCollectionUrl: "",
 };
 
@@ -61,7 +63,14 @@ export function StoreDetailsFields({ values }: { values: StoreDetailsValues }) {
         name="internalSlackChannel"
         value={values.internalSlackChannel}
         placeholder="C0123ABCD"
-        details="The team's own channel for this store (e.g. website-name-internal). Reports go here alongside the PDC and department-head channels set in Settings."
+        details="The team's own channel for this store (e.g. website-name-internal)."
+      />
+      <s-text-field
+        label="PDC/QA Slack IDs (optional)"
+        name="pdcSlackRecipients"
+        value={values.pdcSlackRecipients}
+        placeholder="U0123ABCD, C0123ABCD"
+        details="This store's PDC/QA. A member ID (U…) gets a direct message; a channel ID (C…) posts in that channel. Add several separated by commas. Member ID: their Slack profile → View full profile → ⋮ → Copy member ID (not the D… ID of your DM with them)."
       />
       <s-text-field
         label="Client (external) Slack channel ID (optional)"
@@ -180,6 +189,7 @@ export function detailsFromForm(form: FormData): StoreDetailsValues {
     searchQuery: get("searchQuery"),
     slackChannel: get("slackChannel"),
     internalSlackChannel: get("internalSlackChannel"),
+    pdcSlackRecipients: get("pdcSlackRecipients"),
     speedCollectionUrl: get("speedCollectionUrl"),
   };
 }

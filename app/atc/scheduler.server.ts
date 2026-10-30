@@ -10,7 +10,7 @@ import { startSpeedRun } from "./speed.server";
 /**
  * Runs scheduled checks. Once a minute, any store whose `nextRunAt` has
  * passed gets a flow check (desktop + mobile) and a speed test, and one
- * report covering both is posted to every configured Slack channel when they
+ * report covering both is posted to every configured Slack recipient when they
  * finish. `nextRunAt` is moved on before
  * the check starts, so a slow check or a restart never runs it twice.
  *
@@ -68,10 +68,12 @@ export async function runDueChecks(now = new Date()): Promise<number> {
 
 async function postScheduledReport(started: Store, checkId: string, speedRunId?: string) {
   if (!(await slackBotConfigured())) return;
-  // Re-read the store: its channels may have changed while the check ran.
+  // Re-read the store: its recipients may have changed while the check ran.
   const store = await prisma.store.findUnique({ where: { id: started.id } });
   if (!store) return;
-  const audiences = (await slackTargets(store)).filter((t) => t.channel).map((t) => t.audience);
+  const audiences = (await slackTargets(store))
+    .filter((t) => t.recipients.length > 0)
+    .map((t) => t.audience);
   if (audiences.length === 0) return;
   const result = await sendCheckReport(
     checkId,

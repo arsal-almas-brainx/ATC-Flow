@@ -4,7 +4,7 @@ import type { Store } from "@prisma/client";
 import prisma from "../db.server.ts";
 import { resolveWebBotAuthCredentials } from "./web-bot-auth.server.ts";
 import { screenshotRoot } from "./browser/screenshots.server.ts";
-import { parseSlackChannel } from "./slack.server.ts";
+import { parseSlackChannel, parseSlackRecipients } from "./slack.server.ts";
 import type { RunOptions } from "./types.ts";
 
 /** Raw form values. Optional fields may be omitted (e.g. the quick "Add a store" form). */
@@ -16,6 +16,7 @@ export type StoreInput = {
   searchQuery?: string;
   slackChannel?: string;
   internalSlackChannel?: string;
+  pdcSlackRecipients?: string;
   speedCollectionUrl?: string;
 };
 
@@ -27,6 +28,7 @@ export type StoreData = {
   searchQuery: string | null;
   slackChannel: string | null;
   internalSlackChannel: string | null;
+  pdcSlackRecipients: string | null;
   speedCollectionUrl: string | null;
 };
 
@@ -82,6 +84,8 @@ export function validateStoreInput(
   if ("error" in slack) return { error: slack.error };
   const internal = parseSlackChannel(input.internalSlackChannel ?? "", "Internal Slack channel");
   if ("error" in internal) return { error: internal.error };
+  const pdc = parseSlackRecipients(input.pdcSlackRecipients ?? "", "PDC/QA");
+  if ("error" in pdc) return { error: pdc.error };
 
   const collection = input.speedCollectionUrl?.trim() || null;
   if (collection) {
@@ -105,6 +109,7 @@ export function validateStoreInput(
       searchQuery: input.searchQuery?.trim() || null,
       slackChannel: slack.value,
       internalSlackChannel: internal.value,
+      pdcSlackRecipients: pdc.value,
       speedCollectionUrl: collection,
     },
   };

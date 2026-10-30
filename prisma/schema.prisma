@@ -42,6 +42,10 @@ model Store {
   /// (website-name-internal).
   internalSlackChannel String?
 
+  /// This store's PDC/QA: comma-separated Slack IDs — channel IDs (C…/G…)
+  /// post to the channel, member IDs (U…/W…) get a direct message.
+  pdcSlackRecipients String?
+
   /// Collection page the speed test measures. Null: /collections/all.
   speedCollectionUrl String?
 
@@ -80,9 +84,9 @@ model Store {
 model AppSetting {
   id Int @id @default(1)
 
-  /// Slack channel IDs that receive every store's reports.
-  pdcSlackChannel      String?
-  deptHeadSlackChannel String?
+  /// Department heads / team leads who receive every store's reports:
+  /// comma-separated Slack channel IDs (C…/G…) and/or member IDs (U…/W…, DM).
+  deptHeadSlackRecipients String?
 
   /// Slack bot token (xoxb-…). Takes precedence over the SLACK_BOT_TOKEN env
   /// var. Never sent back to the browser.
@@ -136,8 +140,9 @@ model SlackDelivery {
   run      FlowRun?  @relation(fields: [runId], references: [id], onDelete: Cascade)
   speedRunId String?
   speedRun   SpeedRun? @relation(fields: [speedRunId], references: [id], onDelete: Cascade)
-  /// client | pdc | dept-head
+  /// internal | client | pdc | dept-head
   audience String
+  /// Channel ID, or member ID for a direct message.
   channel  String
   ok       Boolean
   error    String?

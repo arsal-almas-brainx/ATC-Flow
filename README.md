@@ -106,7 +106,7 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
   previous test. Results are kept as history, and have their own **Send to Slack**. Needs a
   PageSpeed API key (Settings). Password-protected stores can't be measured — Google can't get
   past the password, and the result says so.
-- **Send to Slack** — on every finished check; one report covers both desktop and mobile. Tick the internal, client (external), PDC and/or department-head
+- **Send to Slack** — on every finished check; one report covers both desktop and mobile. Tick the internal, client (external), PDC/QA and/or department-head
   channel (the client channel starts unticked, so it's never sent to by accident), optionally **Preview message**, then **Send report**. The report lists the result, the
   product tested, the time (EST) and every failed or warning step with its reason; screenshots of
   those steps are posted in a thread under it. Every send, successful or not, is recorded and
@@ -116,8 +116,11 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
   - *Slack bot* — paste the bot token (`xoxb-…`, scopes `chat:write` and `files:write`). It's
     tested with Slack before saving and never shown again; the page shows which workspace and bot
     it belongs to. With no token saved here, the `SLACK_BOT_TOKEN` environment variable is used.
-  - *Slack channels* — the PDC and department-head channel IDs, which receive every store's
-    report. Invite the bot to each channel; a channel's ID is at the bottom of its details panel.
+  - *Department heads / team leads* — Slack IDs that receive every store's report, separated by
+    commas: member IDs (`U…`, sent as a direct message; profile → View full profile → ⋮ → Copy member ID — not the
+    `D…` ID of your own DM with them) and/or
+    channel IDs (`C…`; at the bottom of the channel's details — invite the bot to the channel).
+    Each store's **PDC/QA** is set the same way in that store's settings.
   - *Google PageSpeed* — the PageSpeed Insights API key used by speed tests (tested with Google
     before saving, never shown again). Falls back to the `PAGESPEED_API_KEY` env var.
   - *Admin password* — change it here (current password + new one twice, at least 10
@@ -306,7 +309,7 @@ app/atc/checks/             one file per journey stage: storefront, search, cart
 app/atc/browser/            Chromium lifecycle, Web Bot Auth headers, challenge detection, screenshots
 app/atc/store.server.ts     starts runs, keeps live progress in memory, persists to SQLite
 app/atc/stores.server.ts    store config: CRUD, validation, building a run's options
-app/atc/app-settings.server.ts   global settings (PDC / department-head Slack channels)
+app/atc/app-settings.server.ts   global settings (department heads / team leads, Slack bot, PageSpeed key)
 app/atc/slack.server.ts     Slack API: bot identity, posting, screenshot uploads, channel ID validation
 app/atc/report.server.ts    builds a run's Slack report and sends it; records every send (SlackDelivery)
 app/atc/checks/product-pick.server.ts   picks the product to test (saved pool or best sellers)

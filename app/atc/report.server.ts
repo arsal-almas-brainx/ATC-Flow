@@ -3,7 +3,13 @@ import type { Store } from "@prisma/client";
 import prisma from "../db.server";
 import { getAppSettings } from "./app-settings.server";
 import { getCheck, type Check } from "./store.server";
-import { postMessage, slackBotConfigured, uploadImagesToThread } from "./slack.server";
+import {
+  isMemberId,
+  postMessage,
+  recipientList,
+  slackBotConfigured,
+  uploadImagesToThread,
+} from "./slack.server";
 import { NOT_REACHED } from "./checker.server";
 import type { FlowRun, RunStep } from "./types";
 import { getSpeedRun } from "./speed.server";
@@ -15,27 +21,44 @@ export type Audience = (typeof AUDIENCES)[number];
 const AUDIENCE_LABEL: Record<Audience, string> = {
   internal: "Internal channel",
   client: "Client (external) channel",
-  pdc: "PDC channel",
-  "dept-head": "Department head channel",
+  pdc: "PDC/QA",
+  "dept-head": "Department heads / team leads",
 };
 
-export type SlackTarget = { audience: Audience; label: string; channel: string | null };
+/** The audience label, naming the recipient where an audience can have several or a DM. */
+function recipientLabel(audience: Audience, recipient: string): string {
+  const label = AUDIENCE_LABEL[audience];
+  if (isMemberId(recipient)) return `${label} · DM ${recipient}`;
+  if (audience === "pdc" || audience === "dept-head") return `${label} · ${recipient}`;
+  return label;
+}
 
-/** Every audience, with its configured channel (null when not set). */
+/** An audience and who it reaches: channel IDs and/or member IDs (DMs). Empty when not set. */
+export type SlackTarget = { audience: Audience; label: string; recipients: string[] };
+
 export async function slackTargets(
-  store: Pick<Store, "slackChannel" | "internalSlackChannel">,
+  store: Pick<Store, "slackChannel" | "internalSlackChannel" | "pdcSlackRecipients">,
 ): Promise<SlackTarget[]> {
   const settings = await getAppSettings();
-  const channel: Record<Audience, string | null> = {
-    internal: store.internalSlackChannel,
-    client: store.slackChannel,
-    pdc: settings.pdcSlackChannel,
-    "dept-head": settings.deptHeadSlackChannel,
+  const recipients: Record<Audience, string[]> = {
+    internal: recipientList(store.internalSlackChannel),
+    client: recipientList(store.slackChannel),
+    pdc: recipientList(store.pdcSlackRecipients),
+    "dept-head": recipientList(settings.deptHeadSlackRecipients),
   };
   return AUDIENCES.map((audience) => ({
     audience,
     label: AUDIENCE_LABEL[audience],
-    channel: channel[audience],
+    recipients: recipients[audience],
+  }));
+}
+
+/** The Send to Slack checkboxes: one per audience, with how many it reaches. */
+export async function slackTargetOptions(store: Parameters<typeof slackTargets>[0]) {
+  return (await slackTargets(store)).map((t) => ({
+    audience: t.audience,
+    label: t.recipients.length > 1 ? `${t.label} (${t.recipients.length})` : t.label,
+    configured: t.recipients.length > 0,
   }));
 }
 
@@ -187,33 +210,40 @@ async function deliver(
 ): Promise<DeliveryResult[]> {
   const results: DeliveryResult[] = [];
   for (const target of targets) {
-    if (!target.channel) {
-      results.push({ ...target, ok: false, error: "no channel ID is set" });
+    if (target.recipients.length === 0) {
+      results.push({ audience: target.audience, label: target.label, ok: false, error: "no Slack ID is set" });
       continue;
     }
-    const posted = await postMessage(target.channel, message);
-    let error = posted.ok ? undefined : posted.error;
-    if (posted.ok && shots.length > 0) {
-      const up = await uploadImagesToThread(
-        target.channel,
-        posted.ts,
-        shots,
-        `Screenshots of the ${shots.length === 1 ? "step" : "steps"} with issues`,
-      );
-      if (!up.ok) error = `report posted, but screenshots failed: ${up.error}`;
-    }
-    await prisma.slackDelivery.create({
-      data: {
-        runId: link.runId ?? null,
-        speedRunId: link.speedRunId ?? null,
+    for (const recipient of target.recipients) {
+      const posted = await postMessage(recipient, message);
+      let error = posted.ok ? undefined : posted.error;
+      if (posted.ok && shots.length > 0) {
+        const up = await uploadImagesToThread(
+          posted.channel,
+          posted.ts,
+          shots,
+          `Screenshots of the ${shots.length === 1 ? "step" : "steps"} with issues`,
+        );
+        if (!up.ok) error = `report posted, but screenshots failed: ${up.error}`;
+      }
+      await prisma.slackDelivery.create({
+        data: {
+          runId: link.runId ?? null,
+          speedRunId: link.speedRunId ?? null,
+          audience: target.audience,
+          channel: recipient,
+          ok: posted.ok,
+          error: error ?? null,
+          ts: posted.ok ? posted.ts : null,
+        },
+      });
+      results.push({
         audience: target.audience,
-        channel: target.channel,
-        ok: posted.ok,
-        error: error ?? null,
-        ts: posted.ok ? posted.ts : null,
-      },
-    });
-    results.push({ audience: target.audience, label: target.label, ok: posted.ok && !error, error });
+        label: recipientLabel(target.audience, recipient),
+        ok: posted.ok && !error,
+        error,
+      });
+    }
   }
   return results;
 }
@@ -228,7 +258,7 @@ async function prepare(
   const store = await prisma.store.findUnique({ where: { id: storeId } });
   if (!store) return { error: "Store not found." };
   const targets = (await slackTargets(store)).filter((t) => audiences.includes(t.audience));
-  if (targets.length === 0) return { error: "Pick at least one channel." };
+  if (targets.length === 0) return { error: "Pick at least one recipient." };
   return { store, targets };
 }
 
@@ -369,7 +399,7 @@ export async function listDeliveries(of: Check | { speedRunId: string }) {
   });
   return rows.map((r) => ({
     audience: r.audience as Audience,
-    label: AUDIENCE_LABEL[r.audience as Audience] ?? r.audience,
+    label: AUDIENCE_LABEL[r.audience as Audience] ? recipientLabel(r.audience as Audience, r.channel) : r.audience,
     ok: r.ok,
     error: r.error,
     sentAt: r.sentAt.getTime(),

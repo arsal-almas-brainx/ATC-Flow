@@ -8,7 +8,7 @@ import {
   listDeliveries,
   previewText,
   sendSpeedReport,
-  slackTargets,
+  slackTargetOptions,
   type Audience,
 } from "../atc/report.server";
 import { slackBotConfigured } from "../atc/slack.server";
@@ -22,11 +22,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   return {
     botConfigured: await slackBotConfigured(),
-    targets: (await slackTargets(store)).map((t) => ({
-      audience: t.audience,
-      label: t.label,
-      configured: Boolean(t.channel),
-    })),
+    targets: await slackTargetOptions(store),
     preview: previewText(buildSpeedReport(speed, store).blocks),
     deliveries: await listDeliveries({ speedRunId: speed.id }),
   };

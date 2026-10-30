@@ -4,6 +4,7 @@ import { getAppSettings } from "./app-settings.server.ts";
  * Slack is reached through one bot. Its token is saved in Settings, or — when
  * none is saved there — read from the SLACK_BOT_TOKEN env var. Channels are
  * configured by ID; the bot must be invited to each channel it posts to.
+ * People are reached by member ID, as a direct message from the bot.
  */
 
 export type TokenSource = "settings" | "env";
@@ -44,13 +45,53 @@ export function parseSlackChannel(
   return { value };
 }
 
+/**
+ * Accepts one or more Slack IDs separated by commas, spaces or new lines.
+ * Channel IDs (C…/G…) post to the channel; member IDs (U…/W…) get a direct
+ * message from the bot. Returns them comma-separated, or null for blank input.
+ */
+export function parseSlackRecipients(
+  raw: string,
+  label: string,
+): { value: string | null } | { error: string } {
+  const entries = raw.split(/[\s,]+/).filter(Boolean);
+  // A DM's own ID (D…) is your conversation with that person — the bot isn't in it.
+  const dm = entries.find((e) => /^D[A-Z0-9]{8,}$/i.test(e));
+  if (dm) {
+    return {
+      error:
+        `${label}: "${dm}" is the ID of your own DM with that person, which the bot can't post in. ` +
+        "Use their member ID instead: open their profile → View full profile → ⋮ → Copy member ID (starts with U).",
+    };
+  }
+  const bad = entries.find((e) => !/^[CGUW][A-Z0-9]{8,}$/.test(e.replace(/^[#@]/, "").toUpperCase()));
+  if (bad) {
+    return {
+      error:
+        `${label}: "${bad}" isn't a Slack ID. Use a channel ID like C0123ABCD (channel details → ` +
+        "bottom) or a member ID like U0123ABCD (profile → View full profile → ⋮ → Copy member ID).",
+    };
+  }
+  const ids = entries.map((e) => e.replace(/^[#@]/, "").toUpperCase());
+  return { value: ids.length ? [...new Set(ids)].join(",") : null };
+}
+
+export function recipientList(value: string | null): string[] {
+  return value ? value.split(",").filter(Boolean) : [];
+}
+
+/** Member IDs are sent as a direct message rather than to a channel. */
+export const isMemberId = (id: string) => /^[UW]/.test(id);
+
 type SlackResponse = { ok: boolean; error?: string; [key: string]: unknown };
 
 /** Plain-language versions of the Slack errors a misconfiguration produces. */
 const SLACK_ERRORS: Record<string, string> = {
   not_in_channel: "the bot isn't in this channel — type /invite @<bot name> in the channel",
   channel_not_found:
-    "channel not found — check the ID, and for a private channel invite the bot first",
+    "channel or member not found — check the ID, and for a private channel invite the bot first",
+  user_not_found: "member not found — check the member ID",
+  cannot_dm_bot: "that member ID belongs to a bot, which can't receive direct messages",
   invalid_auth: "the Slack bot token is invalid",
   not_authed: "no Slack bot token is set",
   account_inactive: "the Slack bot token belongs to an app that was removed",
@@ -102,7 +143,9 @@ export async function postMessage(
   channel: string,
   message: { text: string; blocks?: unknown[] },
   threadTs?: string,
-): Promise<{ ok: true; ts: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; ts: string; channel: string } | { ok: false; error: string }> {
+  // A member ID opens the bot's DM with that person; Slack replies with the
+  // DM's own channel ID, which is what the screenshot upload needs.
   const res = await slackApi("chat.postMessage", {
     channel,
     text: message.text,
@@ -112,7 +155,7 @@ export async function postMessage(
     ...(threadTs ? { thread_ts: threadTs } : {}),
   });
   if (!res.ok) return { ok: false, error: describeSlackError(res.error) };
-  return { ok: true, ts: String(res.ts) };
+  return { ok: true, ts: String(res.ts), channel: String(res.channel) };
 }
 
 /**

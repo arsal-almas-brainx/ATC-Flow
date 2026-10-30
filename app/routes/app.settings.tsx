@@ -13,7 +13,7 @@ import {
   saveSlackBotToken,
 } from "../atc/app-settings.server";
 import { pageSpeedKeySource, testPageSpeedKey } from "../atc/speed.server";
-import { parseSlackChannel, slackIdentity, slackTokenSource } from "../atc/slack.server";
+import { parseSlackRecipients, slackIdentity, slackTokenSource } from "../atc/slack.server";
 import { MIN_PASSWORD_LENGTH } from "../password-hash.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -21,8 +21,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const settings = await getAppSettings();
   const tokenSource = await slackTokenSource();
   return {
-    pdcSlackChannel: settings.pdcSlackChannel ?? "",
-    deptHeadSlackChannel: settings.deptHeadSlackChannel ?? "",
+    deptHeadSlackRecipients: settings.deptHeadSlackRecipients?.replace(/,/g, ", ") ?? "",
     // Only where the token comes from — never the token itself.
     tokenSource,
     identity: tokenSource ? await slackIdentity() : null,
@@ -42,16 +41,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = String(form.get("intent") ?? "");
   const result = (r: Omit<ActionResult, "intent">): ActionResult => ({ intent, ...r });
 
-  if (intent === "save-channels") {
-    const pdc = parseSlackChannel(String(form.get("pdcSlackChannel") ?? ""), "PDC channel");
-    if ("error" in pdc) return result({ error: pdc.error });
-    const head = parseSlackChannel(
-      String(form.get("deptHeadSlackChannel") ?? ""),
-      "Department head channel",
+  if (intent === "save-dept-heads") {
+    const heads = parseSlackRecipients(
+      String(form.get("deptHeadSlackRecipients") ?? ""),
+      "Department heads / team leads",
     );
-    if ("error" in head) return result({ error: head.error });
-    await saveAppSettings({ pdcSlackChannel: pdc.value, deptHeadSlackChannel: head.value });
-    return result({ message: "Slack channels saved." });
+    if ("error" in heads) return result({ error: heads.error });
+    await saveAppSettings({ deptHeadSlackRecipients: heads.value });
+    return result({ message: "Department heads / team leads saved." });
   }
 
   if (intent === "save-token") {
@@ -107,8 +104,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function Settings() {
   const {
-    pdcSlackChannel,
-    deptHeadSlackChannel,
+    deptHeadSlackRecipients,
     tokenSource,
     identity,
     pageSpeedKey,
@@ -191,35 +187,30 @@ export default function Settings() {
         </s-stack>
       </s-section>
 
-      <s-section heading="Slack channels">
+      <s-section heading="Department heads / team leads">
         <Form method="post">
-          <input type="hidden" name="intent" value="save-channels" />
+          <input type="hidden" name="intent" value="save-dept-heads" />
           <s-stack direction="block" gap="base">
             <s-text-field
-              label="PDC channel ID"
-              name="pdcSlackChannel"
-              value={pdcSlackChannel}
-              placeholder="C0123ABCD"
-              details="Receives every store's report."
-            />
-            <s-text-field
-              label="Department head channel ID"
-              name="deptHeadSlackChannel"
-              value={deptHeadSlackChannel}
-              placeholder="C0123ABCD"
-              details="Receives every store's report."
+              label="Slack IDs"
+              name="deptHeadSlackRecipients"
+              value={deptHeadSlackRecipients}
+              placeholder="U0123ABCD, U0456EFGH, C0123ABCD"
+              details="Receive every store's report. A member ID (U…) gets a direct message; a channel ID (C…) posts in that channel. Add several separated by commas."
             />
             <s-paragraph>
               <s-text color="subdued">
-                In Slack, open a channel&apos;s details — the Channel ID is at the bottom. Invite the
-                bot to each channel. Each store&apos;s internal and client (external) channels are set in that
+                Member ID: open the person&apos;s Slack profile → View full profile → ⋮ → Copy member ID
+                (not the D… ID of your DM with them). Channel ID: open
+                the channel&apos;s details — it&apos;s at the bottom; invite the bot to the channel. Each
+                store&apos;s internal, client (external) and PDC/QA recipients are set in that
                 store&apos;s settings.
               </s-text>
             </s-paragraph>
-            {feedback("save-channels")}
+            {feedback("save-dept-heads")}
             <s-stack direction="inline" gap="base">
-              <s-button type="submit" {...(busy("save-channels") ? { loading: true } : {})}>
-                Save channels
+              <s-button type="submit" {...(busy("save-dept-heads") ? { loading: true } : {})}>
+                Save
               </s-button>
             </s-stack>
           </s-stack>

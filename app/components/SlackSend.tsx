@@ -79,7 +79,7 @@ export function SlackSend({ endpoint }: { endpoint: string }) {
                     fontSize: 13,
                     opacity: t.configured ? 1 : 0.5,
                   }}
-                  title={t.configured ? undefined : "No channel ID set"}
+                  title={t.configured ? undefined : "No Slack ID set"}
                 >
                   <input
                     type="checkbox"
@@ -135,8 +135,8 @@ export function SlackSend({ endpoint }: { endpoint: string }) {
             tone={result.results.every((r) => r.ok) ? "success" : "warning"}
             heading={result.results.every((r) => r.ok) ? "Sent" : "Some channels failed"}
           >
-            {result.results.map((r) => (
-              <s-paragraph key={r.audience}>
+            {result.results.map((r, i) => (
+              <s-paragraph key={i}>
                 {r.ok ? "✓" : "✗"} {r.label}
                 {r.error ? ` — ${r.error}` : ""}
               </s-paragraph>
