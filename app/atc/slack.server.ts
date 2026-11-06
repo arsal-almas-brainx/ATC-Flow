@@ -1,27 +1,14 @@
-import { getAppSettings } from "./app-settings.server.ts";
-
 /**
- * Slack is reached through one bot. Its token is saved in Settings, or — when
- * none is saved there — read from the SLACK_BOT_TOKEN env var. Channels are
+ * Slack is reached through one bot, whose token is the SLACK_BOT_TOKEN env var
+ * — kept in .env on the server, never in the database or the browser. Channels are
  * configured by ID; the bot must be invited to each channel it posts to.
  * People are reached by member ID, as a direct message from the bot.
  */
 
-export type TokenSource = "settings" | "env";
-
-async function botToken(): Promise<{ token: string; source: TokenSource } | null> {
-  const saved = (await getAppSettings()).slackBotToken;
-  if (saved) return { token: saved, source: "settings" };
-  if (process.env.SLACK_BOT_TOKEN) return { token: process.env.SLACK_BOT_TOKEN, source: "env" };
-  return null;
-}
+const botToken = () => process.env.SLACK_BOT_TOKEN || null;
 
 export async function slackBotConfigured(): Promise<boolean> {
-  return (await botToken()) !== null;
-}
-
-export async function slackTokenSource(): Promise<TokenSource | null> {
-  return (await botToken())?.source ?? null;
+  return botToken() !== null;
 }
 
 /**
@@ -107,9 +94,8 @@ async function slackApi(
   method: string,
   body: Record<string, unknown>,
   form = false,
-  tokenOverride?: string,
 ): Promise<SlackResponse> {
-  const token = tokenOverride ?? (await botToken())?.token;
+  const token = botToken();
   if (!token) return { ok: false, error: "not_authed" };
   const res = await fetch(`https://slack.com/api/${method}`, {
     method: "POST",
@@ -127,14 +113,11 @@ async function slackApi(
   return (await res.json()) as SlackResponse;
 }
 
-/**
- * Which workspace and bot a token belongs to — shown in Settings to confirm
- * the connection, and used to test a token before it is saved.
- */
-export async function slackIdentity(token?: string): Promise<
+/** Which workspace and bot the token belongs to — shown in Settings to confirm the connection. */
+export async function slackIdentity(): Promise<
   { ok: true; team: string; bot: string } | { ok: false; error: string }
 > {
-  const res = await slackApi("auth.test", {}, false, token);
+  const res = await slackApi("auth.test", {});
   if (!res.ok) return { ok: false, error: describeSlackError(res.error) };
   return { ok: true, team: String(res.team ?? ""), bot: String(res.user ?? "") };
 }

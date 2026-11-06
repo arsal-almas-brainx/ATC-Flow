@@ -96,6 +96,9 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
     the server was down happens once when it's back.
   - *Storefront password* — only while the store is password protected. Never sent back to the
     browser — only whether one is stored.
+  - Per-store values (Web Bot Auth signature, storefront password) are saved in the database rather
+    than `.env`: every store has its own, and signatures are replaced every few months from this
+    page. Server-wide secrets (Slack token, PageSpeed key, `SESSION_SECRET`) live only in `.env`.
   - *Delete store* — removes it with all of its check history and screenshots.
 
 - **Run speed test** — the **Speed** tab. Google PageSpeed Insights measures the homepage, a
@@ -113,16 +116,16 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
   listed under **Sent**. Set `APP_URL` (e.g. `https://atc-flow-app.fly.dev`) to add a "view the
   full report" link — it opens that run on the store's page.
 - **Settings** (`/app/settings`)
-  - *Slack bot* — paste the bot token (`xoxb-…`, scopes `chat:write` and `files:write`). It's
-    tested with Slack before saving and never shown again; the page shows which workspace and bot
-    it belongs to. With no token saved here, the `SLACK_BOT_TOKEN` environment variable is used.
+  - *Slack bot* — shows whether Slack is connected and which workspace and bot. The token
+    (`xoxb-…`, scopes `chat:write` and `files:write`) is the `SLACK_BOT_TOKEN` env var in `.env`,
+    never stored in the database or shown in the browser; edit `.env` and restart to change it.
   - *Department heads / team leads* — Slack IDs that receive every store's report, separated by
     commas: member IDs (`U…`, sent as a direct message; profile → View full profile → ⋮ → Copy member ID — not the
     `D…` ID of your own DM with them) and/or
     channel IDs (`C…`; at the bottom of the channel's details — invite the bot to the channel).
     Each store's **PDC/QA** is set the same way in that store's settings.
-  - *Google PageSpeed* — the PageSpeed Insights API key used by speed tests (tested with Google
-    before saving, never shown again). Falls back to the `PAGESPEED_API_KEY` env var.
+  - *Google PageSpeed* — shows whether the `PAGESPEED_API_KEY` env var (in `.env`) is set, with a
+    button to check it with Google. Like the Slack token, it's never stored in the database.
   - *Admin password* — change it here (current password + new one twice, at least 10
     characters). It's stored as an scrypt hash. Until it's changed here, `ADMIN_PASSWORD` is the
     password. Changing it signs out everyone else. Forgotten it? On the server:

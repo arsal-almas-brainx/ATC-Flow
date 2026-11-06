@@ -7,8 +7,6 @@ export async function getAppSettings() {
     (await prisma.appSetting.findUnique({ where: { id: ID } })) ?? {
       id: ID,
       deptHeadSlackRecipients: null,
-      slackBotToken: null,
-      pageSpeedApiKey: null,
       adminPasswordHash: null,
       adminPasswordChangedAt: null,
       updatedAt: new Date(0),
@@ -21,21 +19,5 @@ export function saveAppSettings(data: { deptHeadSlackRecipients: string | null }
     where: { id: ID },
     create: { id: ID, ...data },
     update: data,
-  });
-}
-
-export function saveSlackBotToken(token: string | null) {
-  return prisma.appSetting.upsert({
-    where: { id: ID },
-    create: { id: ID, slackBotToken: token },
-    update: { slackBotToken: token },
-  });
-}
-
-export function savePageSpeedApiKey(key: string | null) {
-  return prisma.appSetting.upsert({
-    where: { id: ID },
-    create: { id: ID, pageSpeedApiKey: key },
-    update: { pageSpeedApiKey: key },
   });
 }

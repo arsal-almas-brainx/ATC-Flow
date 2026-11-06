@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Store } from "@prisma/client";
 import prisma from "../db.server.ts";
-import { getAppSettings } from "./app-settings.server.ts";
 import { productUrlList } from "./stores.server.ts";
 import { resolveWebBotAuthCredentials } from "./web-bot-auth.server.ts";
 import { runWithBrowserSession } from "./browser/launch.server.ts";
@@ -32,17 +31,17 @@ import {
 const PSI_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 const PSI_TIMEOUT_MS = 120_000;
 
-async function apiKey(): Promise<string | undefined> {
-  return (await getAppSettings()).pageSpeedApiKey ?? process.env.PAGESPEED_API_KEY ?? undefined;
+/** The PAGESPEED_API_KEY env var — kept in .env on the server, never in the database. */
+const apiKey = () => process.env.PAGESPEED_API_KEY || undefined;
+
+export function pageSpeedKeyConfigured(): boolean {
+  return apiKey() !== undefined;
 }
 
-export async function pageSpeedKeySource(): Promise<"settings" | "env" | null> {
-  if ((await getAppSettings()).pageSpeedApiKey) return "settings";
-  return process.env.PAGESPEED_API_KEY ? "env" : null;
-}
-
-/** Tests a key with one cheap request before it is saved. */
-export async function testPageSpeedKey(key: string): Promise<string | null> {
+/** Tests the key with one cheap request. Returns null when Google accepts it. */
+export async function testPageSpeedKey(): Promise<string | null> {
+  const key = apiKey();
+  if (!key) return "PAGESPEED_API_KEY isn't set";
   const res = await fetch(
     `${PSI_URL}?${new URLSearchParams({ url: "https://www.google.com/", key, category: "performance" })}`,
     { signal: AbortSignal.timeout(PSI_TIMEOUT_MS) },
@@ -214,7 +213,7 @@ export async function startSpeedRun(
     // Finding the product can take a few seconds (a real browser), so it
     // happens after the run is saved — the UI shows it running straight away.
     const urls = await speedUrls(store, { discover: true });
-    const key = await apiKey();
+    const key = apiKey();
     const jobs = PAGES.flatMap((page) =>
       (["mobile", "desktop"] as const).map((device): Promise<SpeedResult> => {
         const url = urls[page];

@@ -6,26 +6,21 @@ import {
   renewSession,
   requireAdmin,
 } from "../auth.server";
-import {
-  getAppSettings,
-  saveAppSettings,
-  savePageSpeedApiKey,
-  saveSlackBotToken,
-} from "../atc/app-settings.server";
-import { pageSpeedKeySource, testPageSpeedKey } from "../atc/speed.server";
-import { parseSlackRecipients, slackIdentity, slackTokenSource } from "../atc/slack.server";
+import { getAppSettings, saveAppSettings } from "../atc/app-settings.server";
+import { pageSpeedKeyConfigured, testPageSpeedKey } from "../atc/speed.server";
+import { parseSlackRecipients, slackBotConfigured, slackIdentity } from "../atc/slack.server";
 import { MIN_PASSWORD_LENGTH } from "../password-hash.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await requireAdmin(request);
   const settings = await getAppSettings();
-  const tokenSource = await slackTokenSource();
+  const slackConfigured = await slackBotConfigured();
   return {
     deptHeadSlackRecipients: settings.deptHeadSlackRecipients?.replace(/,/g, ", ") ?? "",
-    // Only where the token comes from — never the token itself.
-    tokenSource,
-    identity: tokenSource ? await slackIdentity() : null,
-    pageSpeedKey: await pageSpeedKeySource(),
+    // Only whether secrets are set — never their values.
+    slackConfigured,
+    identity: slackConfigured ? await slackIdentity() : null,
+    pageSpeedKey: pageSpeedKeyConfigured(),
     passwordSource: await adminPasswordSource(),
     passwordChangedAt: settings.adminPasswordChangedAt?.getTime() ?? null,
     passwordJustChanged: new URL(request.url).searchParams.has("passwordChanged"),
@@ -51,39 +46,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return result({ message: "Department heads / team leads saved." });
   }
 
-  if (intent === "save-token") {
-    const token = String(form.get("slackBotToken") ?? "").trim();
-    if (!/^xoxb-/.test(token)) {
-      return result({ error: "That isn't a bot token — it should start with xoxb-." });
-    }
-    // Test it with Slack before replacing a working one.
-    const identity = await slackIdentity(token);
-    if (!identity.ok) return result({ error: `Slack rejected this token: ${identity.error}.` });
-    await saveSlackBotToken(token);
-    return result({ message: `Connected to ${identity.team} as ${identity.bot}.` });
-  }
-
-  if (intent === "clear-token") {
-    await saveSlackBotToken(null);
-    return result({
-      message: process.env.SLACK_BOT_TOKEN
-        ? "Saved token removed — using the SLACK_BOT_TOKEN environment variable."
-        : "Saved token removed — Slack is no longer connected.",
-    });
-  }
-
-  if (intent === "save-psi-key") {
-    const key = String(form.get("pageSpeedApiKey") ?? "").trim();
-    if (!key) return result({ error: "Paste the API key first." });
-    const error = await testPageSpeedKey(key);
-    if (error) return result({ error: `Google rejected this key: ${error}` });
-    await savePageSpeedApiKey(key);
-    return result({ message: "PageSpeed API key saved." });
-  }
-
-  if (intent === "clear-psi-key") {
-    await savePageSpeedApiKey(null);
-    return result({ message: "Saved API key removed." });
+  if (intent === "check-psi-key") {
+    const error = await testPageSpeedKey();
+    if (error) return result({ error: `Google rejected the key: ${error}` });
+    return result({ message: "Google accepted the key." });
   }
 
   if (intent === "change-password") {
@@ -105,7 +71,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function Settings() {
   const {
     deptHeadSlackRecipients,
-    tokenSource,
+    slackConfigured,
     identity,
     pageSpeedKey,
     passwordSource,
@@ -136,13 +102,12 @@ export default function Settings() {
         <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="small-200" alignItems="center">
             <s-text>Status:</s-text>
-            <s-badge tone={connected ? "success" : tokenSource ? "critical" : "neutral"}>
-              {connected ? "Connected" : tokenSource ? "Not working" : "Not configured"}
+            <s-badge tone={connected ? "success" : slackConfigured ? "critical" : "neutral"}>
+              {connected ? "Connected" : slackConfigured ? "Not working" : "Not configured"}
             </s-badge>
             {identity?.ok && (
               <s-text color="subdued">
                 {identity.bot} in {identity.team}
-                {tokenSource === "env" ? " · token from the SLACK_BOT_TOKEN environment variable" : ""}
               </s-text>
             )}
           </s-stack>
@@ -151,39 +116,14 @@ export default function Settings() {
               <s-paragraph>Slack rejected the bot token: {identity.error}.</s-paragraph>
             </s-banner>
           )}
-
-          <Form method="post">
-            <input type="hidden" name="intent" value="save-token" />
-            <s-stack direction="block" gap="base">
-              <s-password-field
-                label={tokenSource === "settings" ? "Replace bot token" : "Bot token"}
-                name="slackBotToken"
-                placeholder="xoxb-…"
-                details="From api.slack.com/apps → your app → OAuth & Permissions → Bot User OAuth Token. Needs chat:write and files:write. It's tested with Slack before saving and never shown again."
-              />
-              {feedback("save-token")}
-              <s-stack direction="inline" gap="base">
-                <s-button type="submit" {...(busy("save-token") ? { loading: true } : {})}>
-                  Save token
-                </s-button>
-              </s-stack>
-            </s-stack>
-          </Form>
-
-          {tokenSource === "settings" && (
-            <Form method="post">
-              <input type="hidden" name="intent" value="clear-token" />
-              <s-stack direction="block" gap="base">
-                {feedback("clear-token")}
-                <s-stack direction="inline" gap="base">
-                  <s-button type="submit" tone="critical" variant="tertiary">
-                    Remove saved token
-                  </s-button>
-                </s-stack>
-              </s-stack>
-            </Form>
-          )}
-          {result?.intent === "clear-token" && tokenSource !== "settings" && feedback("clear-token")}
+          <SecretNote envVar="SLACK_BOT_TOKEN" />
+          <s-paragraph>
+            <s-text color="subdued">
+              The token is the Bot User OAuth Token (starts with xoxb-) from api.slack.com/apps →
+              your app → OAuth &amp; Permissions. The app needs the chat:write and files:write
+              permissions.
+            </s-text>
+          </s-paragraph>
         </s-stack>
       </s-section>
 
@@ -222,12 +162,10 @@ export default function Settings() {
           <s-stack direction="inline" gap="small-200" alignItems="center">
             <s-text>API key:</s-text>
             <s-badge tone={pageSpeedKey ? "success" : "neutral"}>
-              {pageSpeedKey ? "Saved" : "Not set"}
+              {pageSpeedKey ? "Set" : "Not set"}
             </s-badge>
-            {pageSpeedKey === "env" && (
-              <s-text color="subdued">from the PAGESPEED_API_KEY environment variable</s-text>
-            )}
           </s-stack>
+          <SecretNote envVar="PAGESPEED_API_KEY" />
           <s-paragraph>
             <s-text color="subdued">
               Speed tests use Google PageSpeed Insights. Without a key Google allows only a few tests
@@ -236,33 +174,19 @@ export default function Settings() {
               credentials → API key (restrict it to the PageSpeed Insights API).
             </s-text>
           </s-paragraph>
-          <Form method="post">
-            <input type="hidden" name="intent" value="save-psi-key" />
-            <s-stack direction="block" gap="base">
-              <s-password-field
-                label={pageSpeedKey === "settings" ? "Replace API key" : "API key"}
-                name="pageSpeedApiKey"
-                details="Tested with Google before saving and never shown again."
-              />
-              {feedback("save-psi-key")}
-              <s-stack direction="inline" gap="base">
-                <s-button type="submit" {...(busy("save-psi-key") ? { loading: true } : {})}>
-                  Save API key
-                </s-button>
-              </s-stack>
-            </s-stack>
-          </Form>
-          {pageSpeedKey === "settings" && (
+          {pageSpeedKey && (
             <Form method="post">
-              <input type="hidden" name="intent" value="clear-psi-key" />
-              <s-stack direction="inline" gap="base">
-                <s-button type="submit" tone="critical" variant="tertiary">
-                  Remove saved key
-                </s-button>
+              <input type="hidden" name="intent" value="check-psi-key" />
+              <s-stack direction="block" gap="base">
+                {feedback("check-psi-key")}
+                <s-stack direction="inline" gap="base">
+                  <s-button type="submit" {...(busy("check-psi-key") ? { loading: true } : {})}>
+                    Check key with Google
+                  </s-button>
+                </s-stack>
               </s-stack>
             </Form>
           )}
-          {result?.intent === "clear-psi-key" && feedback("clear-psi-key")}
         </s-stack>
       </s-section>
 
@@ -275,7 +199,8 @@ export default function Settings() {
                 {passwordSource === "settings" && passwordChangedAt
                   ? `Last changed ${new Date(passwordChangedAt).toLocaleString()}.`
                   : "Currently the ADMIN_PASSWORD environment variable. Once changed here, that variable is no longer used."}{" "}
-                Changing it signs out everyone else.
+                A password changed here is stored only as a one-way hash, so it can&apos;t be shown or
+                read back. Changing it signs out everyone else.
               </s-text>
             </s-paragraph>
             <s-password-field
@@ -309,5 +234,18 @@ export default function Settings() {
         </Form>
       </s-section>
     </s-page>
+  );
+}
+
+/** Where a secret lives: the server's .env file, so it's never in the database or the browser. */
+function SecretNote({ envVar }: { envVar: string }) {
+  return (
+    <s-paragraph>
+      <s-text color="subdued">
+        Kept in the server&apos;s .env file as <s-text type="strong">{envVar}</s-text>, not on this
+        page — it&apos;s never stored in the database or shown in the browser. To set or change it,
+        edit .env and restart the app.
+      </s-text>
+    </s-paragraph>
   );
 }

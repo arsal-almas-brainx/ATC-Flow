@@ -6,7 +6,7 @@ import { listChecks, startCheck, type Check } from "../atc/store.server";
 import { getStore, productUrlList, runOptionsFor } from "../atc/stores.server";
 import { describeWebBotAuthStatus } from "../atc/web-bot-auth.server";
 import { LAYERS } from "../atc/layers";
-import { listSpeedRuns, pageSpeedKeySource, speedUrls, startSpeedRun } from "../atc/speed.server";
+import { listSpeedRuns, pageSpeedKeyConfigured, speedUrls, startSpeedRun } from "../atc/speed.server";
 import type { SpeedRunView } from "../atc/speed";
 import { CheckDetail } from "../components/CheckDetail";
 import { SpeedDetail, SpeedHistory, SpeedMeasuredPanel } from "../components/SpeedDetail";
@@ -28,7 +28,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     openTab: url.searchParams.get("tab") === "speed" ? ("speed" as const) : ("flow" as const),
     speedRuns: await listSpeedRuns(store.id, 20),
     speedPages: await speedUrls(store),
-    speedKey: await pageSpeedKeySource(),
+    speedKey: pageSpeedKeyConfigured(),
     store: {
       id: store.id,
       name: store.name,
@@ -308,8 +308,8 @@ export default function StoreDashboard() {
               {!speedKey && (
                 <s-banner tone="warning" heading="No PageSpeed API key">
                   <s-paragraph>
-                    Without an API key Google allows only a few tests a day — add a free key in{" "}
-                    <Link to="/app/settings">Settings</Link>.
+                    Without an API key Google allows only a few tests a day — see{" "}
+                    <Link to="/app/settings">Settings</Link> for how to add one.
                   </s-paragraph>
                 </s-banner>
               )}

@@ -147,8 +147,8 @@ export function StorefrontPasswordField({ saved }: { saved: boolean }) {
       name="storefrontPassword"
       details={
         saved
-          ? "A password is saved. Type a new one to replace it, or leave blank and save to clear it."
-          : "Only while the store is password protected (Online Store → Preferences → Password protection)."
+          ? "A password is saved (in the app's database — never shown again). Type a new one to replace it, or leave blank and save to clear it."
+          : "Only while the store is password protected (Online Store → Preferences → Password protection). Saved in the app's database and never shown again."
       }
     />
   );
@@ -161,6 +161,13 @@ export function WebBotAuthFields({ expires }: { expires: string }) {
         Authorizes the real browser past Shopify&apos;s bot protection — without it, flow tests are
         skipped. Create a signature in the store&apos;s Shopify Admin → Online Store → Preferences →
         Crawler access, then paste its values here. It expires after at most 3 months.
+      </s-paragraph>
+      <s-paragraph>
+        <s-text color="subdued">
+          Saved in the app&apos;s database (each store has its own and it&apos;s replaced every few
+          months, so it isn&apos;t kept in .env). The fields stay empty after saving — the values
+          are never shown again; the status above shows whether one is saved.
+        </s-text>
       </s-paragraph>
       <s-password-field label="Signature" name="signature" details="From Shopify Admin's Crawler access page." />
       <s-password-field

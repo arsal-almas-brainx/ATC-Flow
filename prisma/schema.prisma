@@ -88,13 +88,8 @@ model AppSetting {
   /// comma-separated Slack channel IDs (C…/G…) and/or member IDs (U…/W…, DM).
   deptHeadSlackRecipients String?
 
-  /// Slack bot token (xoxb-…). Takes precedence over the SLACK_BOT_TOKEN env
-  /// var. Never sent back to the browser.
-  slackBotToken String?
-
-  /// Google PageSpeed Insights API key. Takes precedence over the
-  /// PAGESPEED_API_KEY env var. Never sent back to the browser.
-  pageSpeedApiKey String?
+  // The Slack bot token and PageSpeed API key are env vars (SLACK_BOT_TOKEN,
+  // PAGESPEED_API_KEY), deliberately not stored here.
 
   /// scrypt hash of the admin password, set from Settings. When null the
   /// ADMIN_PASSWORD env var is the password. Never stored in plain text.
