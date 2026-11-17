@@ -55,16 +55,80 @@ failure, since a blocked checker is not proof the store is broken.
 
 ---
 
+## Set up from scratch (checklist)
+
+1. **Run it locally** (below) and sign in.
+2. **Create the Slack bot** ([Slack bot setup](#slack-bot-setup)) and put its token in `.env`.
+3. **Get a PageSpeed API key** (Google Cloud → APIs & Services → enable *PageSpeed Insights API* →
+   Credentials → Create API key) and put it in `.env` as `PAGESPEED_API_KEY`.
+4. Restart, then open **Settings**: Slack should say *Connected* and PageSpeed *Set*. Add the
+   department heads / team leads.
+5. **Add a store** (Stores → Add store), including its Web Bot Auth signature, then **Run check**.
+6. For the shared server, see [Deploy to the staging server](#deploy-to-the-staging-server).
+
 ## Run it locally
+
+Needs Node.js 20.19+ or 22.12+ (the staging server runs Node 24).
 
 ```bash
 npm install
-cp .env.example .env        # then set ADMIN_PASSWORD and SESSION_SECRET
-npm run dev                 # http://localhost:3000
+npx playwright install chromium   # the browser the checks run in (one-time download)
+cp .env.example .env              # then set ADMIN_PASSWORD and SESSION_SECRET
+npm run dev                       # http://localhost:3000
 ```
 
 `npm run dev` creates/migrates the local SQLite database (`prisma/dev.sqlite`) and loads `.env`.
 Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared password for the team.
+
+> `npm run dev` applies any pending database migrations on start. Before pulling a change that
+> drops or moves data, copy `prisma/dev.sqlite` somewhere safe.
+
+## Slack bot setup
+
+One bot posts every report. Someone with admin rights in the Slack workspace creates it once:
+
+1. Go to <https://api.slack.com/apps> → **Create New App** → **From scratch**. Name it (e.g.
+   *ATC Flow*) and pick the workspace.
+2. **OAuth & Permissions** → *Bot Token Scopes* → add `chat:write` and `files:write`.
+3. **App Home** → turn on the **Messages Tab** (so people can read the bot's direct messages).
+4. **Install to Workspace** → Allow. Copy the **Bot User OAuth Token** (`xoxb-…`).
+5. Put it in `.env` as `SLACK_BOT_TOKEN` (see [Editing .env](#editing-env)). Share it privately —
+   never in a channel, ticket or commit.
+6. In every channel that should receive reports, type `/invite @ATC Flow` (use the bot's name).
+   Direct messages to member IDs need no invite.
+
+Channel IDs: channel name → *View channel details* → bottom of the *About* tab (`C…`).
+Member IDs: profile → *View full profile* → ⋮ → *Copy member ID* (`U…`).
+
+## Editing .env
+
+Server-wide settings and secrets live only in `.env` (never committed, never in the database):
+
+| Variable | What it is |
+|---|---|
+| `ADMIN_PASSWORD` | Starting admin password. Ignored once the password is changed in Settings. |
+| `SESSION_SECRET` | Signs the login cookie (`openssl rand -hex 32`). Changing it signs everyone out. |
+| `SLACK_BOT_TOKEN` | The Slack bot token (`xoxb-…`). |
+| `PAGESPEED_API_KEY` | Google PageSpeed Insights API key. |
+| `APP_URL` | Public URL of the app; adds a "view full report" link to Slack reports. |
+| `SCREENSHOT_RETENTION_DAYS` | Days to keep step screenshots (default 5). |
+| `PORT`, `HOST`, `DATABASE_URL`, `SCREENSHOT_DIR` | Server only — see [Deploy to the staging server](#deploy-to-the-staging-server). |
+
+One setting per line, `NAME=value`, no spaces around `=` and no quotes.
+
+**Locally:** edit `.env`, save, then stop `npm run dev` (Ctrl+C) and start it again.
+
+**On the staging server:**
+
+```bash
+ssh brainx-server
+nano /var/www/atc-flow/.env          # edit, then Ctrl+O, Enter, Ctrl+X to save and close
+pm2 startOrReload /var/www/atc-flow/ecosystem.config.cjs --update-env
+exit
+```
+
+A plain `pm2 restart` does **not** re-read `.env` — use the `startOrReload` line. Then check
+**Settings**: Slack *Connected*, PageSpeed *Set* (and **Check key with Google**).
 
 ## Using it
 
@@ -82,7 +146,7 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
 - **A store's Settings**
   - *Store details* — name, URL, product URLs, a discount code applied on every check, an
     optional search query (typed into the store's search instead of the product's name — passes
-    when it returns any product), and the store's internal and client (external) Slack channel IDs. Leave the client channel empty
+    when it returns any product), the store's internal and client (external) Slack channel IDs, and its PDC/QA recipients. Leave the client channel empty
     to keep reports internal (e.g. while trialling a store).
   - *Web Bot Auth* — the signature that gets the browser past Cloudflare, created in that store's
     Shopify Admin → Online Store → Preferences → Crawler access. Shows **Not configured / Active /
@@ -106,14 +170,14 @@ Sign in with `ADMIN_PASSWORD`. There are no user accounts — one shared passwor
   product, else the store's top in-stock best seller, found in a real browser each time), each on mobile and desktop. Each gets Google's
   performance score (90+ GOOD, 50–89 AVERAGE, under 50 POOR), its main timings and a link to
   Google's full report. An alert is raised when a page turns POOR or drops 10+ points since the
-  previous test. Results are kept as history, and have their own **Send to Slack**. Needs a
-  PageSpeed API key (Settings). Password-protected stores can't be measured — Google can't get
+  previous test. Results are kept as history, and have their own **Send to Slack**. Needs
+  `PAGESPEED_API_KEY` in `.env`. Password-protected stores can't be measured — Google can't get
   past the password, and the result says so.
 - **Send to Slack** — on every finished check; one report covers both desktop and mobile. Tick the internal, client (external), PDC/QA and/or department-head
   channel (the client channel starts unticked, so it's never sent to by accident), optionally **Preview message**, then **Send report**. The report lists the result, the
   product tested, the time (EST) and every failed or warning step with its reason; screenshots of
   those steps are posted in a thread under it. Every send, successful or not, is recorded and
-  listed under **Sent**. Set `APP_URL` (e.g. `https://atc-flow-app.fly.dev`) to add a "view the
+  listed under **Sent**. Set `APP_URL` (e.g. `https://atc-flow.13.214.27.28.sslip.io`) to add a "view the
   full report" link — it opens that run on the store's page.
 - **Settings** (`/app/settings`)
   - *Slack bot* — shows whether Slack is connected and which workspace and bot. The token
@@ -159,76 +223,81 @@ npm run atc:check -- https://your-store.com/products/x \
 It exits `0` when the flow is healthy and `1` when it is broken (including when the run is skipped
 for having no Web Bot Auth signature). `--save` stores the given signature/password on the store.
 
-## Deploy to Fly.io
+## Deploy to the staging server
 
-The config is already in the repo ([fly.toml](fly.toml), [Dockerfile](Dockerfile)). You need
-`flyctl` (`brew install flyctl`) and a Fly account. Fly builds the image remotely — no local Docker.
+Staging runs on BrainX's shared AWS server (Ubuntu, Node 24), next to other apps, under **pm2**
+behind **nginx**:
+
+| | |
+|---|---|
+| URL | <https://atc-flow.13.214.27.28.sslip.io> |
+| SSH | `ssh brainx-server` (an `~/.ssh/config` entry for `ubuntu@13.214.27.28` with the team's `.pem` key — ask the team lead for the key) |
+| App folder | `/var/www/atc-flow` |
+| pm2 app | `atc-flow` on `127.0.0.1:3070` ([ecosystem.config.cjs](ecosystem.config.cjs)) |
+| Database + screenshots | `/var/www/atc-flow/data/prod.sqlite`, `/var/www/atc-flow/data/screenshots` |
+| nginx site | `/etc/nginx/sites-available/atc-flow.13.214.27.28.sslip.io`, HTTPS by certbot |
+
+[server.mjs](server.mjs) is the production server. It trusts proxy headers from nginx on the same
+machine, so form posts (e.g. login) pass React Router's cross-site check behind HTTPS. pm2 starts
+it with `npm run docker-start`, which applies pending migrations first.
+
+### Updating staging
+
+From the project folder on your machine:
+
+```bash
+npm run build
+ssh brainx-server 'cp /var/www/atc-flow/data/prod.sqlite /var/www/atc-flow/data/prod.sqlite.bak-$(date +%F)'
+rsync -az --delete \
+  --exclude node_modules --exclude .git --exclude .env --exclude data \
+  --exclude prisma/dev.sqlite --exclude screenshots --exclude .react-router \
+  --exclude CLAUDE.md --exclude .claude --exclude Caddyfile --exclude docker-compose.yml \
+  ./ brainx-server:/var/www/atc-flow/
+ssh brainx-server 'cd /var/www/atc-flow && npm ci --omit=dev && npx prisma generate && pm2 startOrReload ecosystem.config.cjs --update-env'
+```
+
+Check it came up: `ssh brainx-server 'pm2 logs atc-flow --lines 20 --nostream'` should end with
+`[server] http://127.0.0.1:3070`. The `--exclude` list is what keeps the server's `.env` and
+database from being overwritten.
+
+### First-time setup (already done on staging)
+
+1. `sudo mkdir -p /var/www/atc-flow && sudo chown ubuntu: /var/www/atc-flow`, then the rsync above.
+2. Create `/var/www/atc-flow/.env` with the [Editing .env](#editing-env) values plus:
+   ```
+   PORT=3070
+   HOST=127.0.0.1
+   DATABASE_URL=file:/var/www/atc-flow/data/prod.sqlite
+   SCREENSHOT_DIR=/var/www/atc-flow/data/screenshots
+   APP_URL=https://atc-flow.13.214.27.28.sslip.io
+   ```
+3. `npm ci --omit=dev && npx prisma generate && npx playwright install --with-deps chromium`
+4. `pm2 start ecosystem.config.cjs && pm2 save`
+5. nginx site: `proxy_pass http://127.0.0.1:3070` with `Host`, `X-Forwarded-For` and
+   `X-Forwarded-Proto` headers and `proxy_read_timeout 300s`; enable it, `sudo nginx -t && sudo
+   systemctl reload nginx`, then `sudo certbot --nginx -d <domain>`.
+
+The server is shared and low on memory; pm2 restarts the app if it goes over 1 GB.
+
+## Deploy to Fly.io (alternative, not in use)
+
+[fly.toml](fly.toml) and the [Dockerfile](Dockerfile) can run the app on Fly.io instead. You need
+`flyctl` (`brew install flyctl`) and a Fly account.
 
 ```bash
 fly auth login
 fly apps create atc-flow-app                 # rename in fly.toml if the name is taken
 fly volumes create data --size 1 --region bom --app atc-flow-app
 fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=$(openssl rand -hex 32) --app atc-flow-app
+fly secrets set SLACK_BOT_TOKEN=... PAGESPEED_API_KEY=... --app atc-flow-app
 fly deploy
 ```
 
-The SQLite database and screenshots live on the `data` volume, so they survive redeploys. The
-machine is kept always on (`min_machines_running = 1`) because scheduled checks and the daily
-screenshot cleanup run inside the server.
-Migrations run on every start (`npm run docker-start`).
+The database and screenshots live on the `data` volume. Migrations run on every start.
 
 ---
 
 ## Troubleshooting
-
-**Admin shows "Find this app in the pages where you work" instead of the app**
-The Shopify CLI didn't find a web server to run, so it left `application_url` pointing at Shopify's
-placeholder page. The CLI discovers the server through `shopify.web.toml` in the project root — if
-that file is missing (or is still the un-rendered `shopify.web.toml.liquid` template), the dev
-output starts no `web` process and logs
-`app_home │ └ Using URL: https://shopify.dev/apps/default-app-home`. Restore `shopify.web.toml`.
-
-**Admin shows "The connection was reset."**
-Two different causes; check the local server first, then the tunnel.
-
-*Local:* on macOS `localhost` resolves to the IPv6 loopback `::1` first, so the CLI proxy binds
-`[::1]:3000` while a tunnel dialing IPv4 `127.0.0.1:3000` gets refused. The `dev` script sets
-`NODE_OPTIONS=--dns-result-order=ipv4first` to force the IPv4 bind. Verify:
-
-```bash
-lsof -nP -iTCP:3000 -sTCP:LISTEN        # want 127.0.0.1:3000, not [::1]:3000
-curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/    # want 200
-```
-
-*Tunnel:* if the local checks pass but Admin still resets, the failure is upstream of your machine.
-Confirm by hitting the public URL directly — a reset during the TLS handshake, with
-`http://127.0.0.1:4040/api/tunnels` still reporting `conns.count: 0`, means requests are dying at
-the ngrok edge and never reaching your agent. Restart ngrok, or use `npm run dev` (no tunnel).
-
-**"Failed to start dev preview." with no other detail**
-Re-run with `--verbose` and look near the end of the output — the CLI prints a one-line banner but
-the real reason is only in the verbose log:
-
-```bash
-npm run dev -- --verbose 2>&1 | tail -40
-```
-
-The usual cause with `--use-localhost` is a webhook subscription in the config, since Shopify
-rejects `https://localhost:…` as a webhook `uri` and one invalid URI fails the whole preview. That
-is why `npm run dev` uses [shopify.app.dev.toml](shopify.app.dev.toml); if you add a subscription,
-add it to [shopify.app.toml](shopify.app.toml) only.
-
-**`Could not start Cloudflare tunnel: failed to dial to edge with quic`**
-Your network is blocking or throttling the path to Cloudflare. Check how slow it actually is:
-
-```bash
-curl -o /dev/null -w '%{http_code} in %{time_total}s\n' https://api.trycloudflare.com/
-```
-
-A `405` is the correct response (the endpoint only accepts POST) — the number that matters is the
-time. Above ~10s, `cloudflared` times out while *creating* the tunnel, before any QUIC connection
-is attempted, so transport flags like `TUNNEL_TRANSPORT_PROTOCOL=http2` cannot help. Use
-`npm run dev`, which needs no tunnel.
 
 **"Not configured yet" / the run is skipped**
 No Web Bot Auth signature is configured for this store, or the stored one has expired. Open the
@@ -311,8 +380,10 @@ app/atc/checker.server.ts   the 12 checks — the whole engine, one continuous b
 app/atc/checks/             one file per journey stage: storefront, search, cart, checkout, collection
 app/atc/browser/            Chromium lifecycle, Web Bot Auth headers, challenge detection, screenshots
 app/atc/store.server.ts     starts runs, keeps live progress in memory, persists to SQLite
+server.mjs                  production server (behind nginx)
+ecosystem.config.cjs        pm2 config for the staging server
 app/atc/stores.server.ts    store config: CRUD, validation, building a run's options
-app/atc/app-settings.server.ts   global settings (department heads / team leads, Slack bot, PageSpeed key)
+app/atc/app-settings.server.ts   global settings (department heads / team leads, admin password hash)
 app/atc/slack.server.ts     Slack API: bot identity, posting, screenshot uploads, channel ID validation
 app/atc/report.server.ts    builds a run's Slack report and sends it; records every send (SlackDelivery)
 app/atc/checks/product-pick.server.ts   picks the product to test (saved pool or best sellers)

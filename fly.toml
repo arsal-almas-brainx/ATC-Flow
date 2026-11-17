@@ -19,8 +19,8 @@ primary_region = "bom"
   APP_URL = "https://atc-flow-app.fly.dev"
 
   # ADMIN_PASSWORD and SESSION_SECRET are secrets — set them with
-  # `fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=...`. The Slack bot token
-  # is added in the app's Settings page.
+  # `fly secrets set ADMIN_PASSWORD=... SESSION_SECRET=...`, as are
+  # SLACK_BOT_TOKEN and PAGESPEED_API_KEY.
 
   # Failure screenshots from the browser-layer check, on the same persistent
   # volume as the database so they survive restarts.
