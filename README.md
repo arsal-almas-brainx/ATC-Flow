@@ -177,7 +177,7 @@ A plain `pm2 restart` does **not** re-read `.env` — use the `startOrReload` li
   channel (the client channel starts unticked, so it's never sent to by accident), optionally **Preview message**, then **Send report**. The report lists the result, the
   product tested, the time (EST) and every failed or warning step with its reason; screenshots of
   those steps are posted in a thread under it. Every send, successful or not, is recorded and
-  listed under **Sent**. Set `APP_URL` (e.g. `https://atc-flow.13.214.27.28.sslip.io`) to add a "view the
+  listed under **Sent**. Set `APP_URL` (e.g. `https://site-checkup.brainxdemo.com`) to add a "view the
   full report" link — it opens that run on the store's page.
 - **Settings** (`/app/settings`)
   - *Slack bot* — shows whether Slack is connected and which workspace and bot. The token
@@ -230,12 +230,12 @@ behind **nginx**:
 
 | | |
 |---|---|
-| URL | <https://atc-flow.13.214.27.28.sslip.io> |
+| URL | <https://site-checkup.brainxdemo.com> |
 | SSH | `ssh brainx-server` (an `~/.ssh/config` entry for `ubuntu@13.214.27.28` with the team's `.pem` key — ask the team lead for the key) |
 | App folder | `/var/www/atc-flow` |
 | pm2 app | `atc-flow` on `127.0.0.1:3070` ([ecosystem.config.cjs](ecosystem.config.cjs)) |
 | Database + screenshots | `/var/www/atc-flow/data/prod.sqlite`, `/var/www/atc-flow/data/screenshots` |
-| nginx site | `/etc/nginx/sites-available/atc-flow.13.214.27.28.sslip.io`, HTTPS by certbot |
+| nginx site | `/etc/nginx/sites-available/site-checkup.brainxdemo.com`, HTTPS by certbot |
 
 [server.mjs](server.mjs) is the production server. It trusts proxy headers from nginx on the same
 machine, so form posts (e.g. login) pass React Router's cross-site check behind HTTPS. pm2 starts
@@ -269,7 +269,7 @@ database from being overwritten.
    HOST=127.0.0.1
    DATABASE_URL=file:/var/www/atc-flow/data/prod.sqlite
    SCREENSHOT_DIR=/var/www/atc-flow/data/screenshots
-   APP_URL=https://atc-flow.13.214.27.28.sslip.io
+   APP_URL=https://site-checkup.brainxdemo.com
    ```
 3. `npm ci --omit=dev && npx prisma generate && npx playwright install --with-deps chromium`
 4. `pm2 start ecosystem.config.cjs && pm2 save`
